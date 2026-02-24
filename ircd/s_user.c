@@ -399,8 +399,9 @@ int register_user(struct Client *cptr, struct Client *sptr) {
     SetUser(sptr);
     cli_handler(sptr) = CLIENT_HANDLER;
 
-    if (MyConnect(sptr) && feature_bool(FEAT_WEBIRC_CLOAKING) && IsWebirc(sptr)) {
-        set_cloakhost(sptr, cli_user(sptr)->realhost);
+    if (MyConnect(sptr) && feature_bool(FEAT_WEBIRC_CLOAKING) &&
+        IsWebirc(sptr)) {
+      set_cloakhost(sptr, cli_user(sptr)->realhost);
     }
 
     SetLocalNumNick(sptr);
@@ -559,7 +560,7 @@ static const struct UserMode {
     {FLAG_CHSERV, 'k'},     {FLAG_DEBUG, 'g'},       {FLAG_ACCOUNT, 'r'},
     {FLAG_HIDDENHOST, 'x'}, {FLAG_ACCOUNTONLY, 'R'}, {FLAG_XTRAOP, 'X'},
     {FLAG_NOCHAN, 'n'},     {FLAG_NOIDLE, 'I'},      {FLAG_SETHOST, 'h'},
-    {FLAG_PARANOID, 'P'},   {FLAG_CLOAKHOST, 'c'}};
+    {FLAG_PARANOID, 'P'},   {FLAG_CLOAKHOST, 'c'},   {FLAG_TLS, 'z'}};
 
 /** Length of #userModeList. */
 #define USERMODELIST_SIZE sizeof(userModeList) / sizeof(struct UserMode)
@@ -1243,6 +1244,7 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   size_t opernamelen;
   char *opername = 0;
   char *account = NULL;
+  char* tls_fingerprint = NULL;
 
   hostmask = password = NULL;
   what = MODE_ADD;
@@ -1439,6 +1441,14 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
         }
         /* There is no -r */
         break;
+      case 'z':
+        if (what == MODE_ADD) {
+          SetTLS(sptr);
+          if (feature_bool(FEAT_TLS_BURST_FINGERPRINT))
+            tls_fingerprint = *(++p);
+        }
+        /* There is no -z */
+        break;        
       default:
         send_reply(sptr, ERR_UMODEUNKNOWNFLAG, *m);
         break;
@@ -1456,6 +1466,10 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
       ClearLocOp(sptr);
     if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(sptr))
       ClrFlag(sptr, FLAG_ACCOUNT);
+    if (!FlagHas(&setflags, FLAG_TLS) && IsTLS(sptr))
+      ClrFlag(sptr, FLAG_TLS);
+    else if (FlagHas(&setflags, FLAG_TLS) && !IsTLS(sptr))
+      SetFlag(sptr, FLAG_TLS);
 
     /*
      * new umode; servers can set it, local users cannot;
@@ -1526,6 +1540,12 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   if (!FlagHas(&setflags, FLAG_HIDDENHOST) && do_host_hiding &&
       allow_modes != ALLOWMODES_DEFAULT)
     hide_hostmask(sptr, FLAG_HIDDENHOST);
+  
+    if (feature_bool(FEAT_TLS_BURST_FINGERPRINT) && tls_fingerprint && tls_fingerprint[0] != '_') {
+    ircd_strncpy(cli_tls_fingerprint(sptr), tls_fingerprint, 64);
+    Debug((DEBUG_DEBUG, "Received TLS fingerprint in user mode; "
+          "fingerprint \"%s\"", cli_tls_fingerprint(sptr)));
+  }
 
   if (do_set_host) {
     /* We clear the flag in the old mask, so that the +h will be sent */
@@ -1635,6 +1655,22 @@ char *umode_str(struct Client *cptr, int opernames) {
       ; /* Empty loop */
 
     m--; /* back up over previous nul-termination */
+  }
+
+  /** If the client is on a secure connection (umode +z) we append the fingerprint.
+   * If the fingerprint is empty (client has not provided a certificate),
+   * we return _ in the place of the fingerprint.
+   */
+  if (IsTLS(cptr) && feature_bool(FEAT_TLS_BURST_FINGERPRINT))
+  {
+    char* t = cli_tls_fingerprint(cptr);
+
+    *m++ = ' ';
+    if (t && *t) {
+        while ((*m++ = *t++));
+    } else {
+        *m++ = '_';
+    }
   }
 
   if (IsSetHost(cptr)) {
@@ -2028,20 +2064,19 @@ static char *IsVhostPass(char *hostmask) {
   return NULL;
 }
 
-int set_cloakhost(struct Client *cptr, char *hostmask)
-{
-    if(!feature_bool(FEAT_WEBIRC_CLOAKING))
-		return 0;   
-    if (!cptr || !hostmask)
-        return 0;
+int set_cloakhost(struct Client *cptr, char *hostmask) {
+  if (!feature_bool(FEAT_WEBIRC_CLOAKING))
+    return 0;
+  if (!cptr || !hostmask)
+    return 0;
 
-    char *cloaked = cloak_host(hostmask);
-    if (!cloaked)
-        return 0;
+  char *cloaked = cloak_host(hostmask);
+  if (!cloaked)
+    return 0;
 
-    ircd_strncpy(cli_user(cptr)->realhost, hostmask, HOSTLEN);
-    ircd_strncpy(cli_user(cptr)->host, cloaked, HOSTLEN);
-    SetCloakHost(cptr);
-    SetSetHost(cptr);
-    return 1;
+  ircd_strncpy(cli_user(cptr)->realhost, hostmask, HOSTLEN);
+  ircd_strncpy(cli_user(cptr)->host, cloaked, HOSTLEN);
+  SetCloakHost(cptr);
+  SetSetHost(cptr);
+  return 1;
 }

@@ -28,6 +28,7 @@
 #include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
+#include "ircd_tls.h"
 #include "list.h"
 #include "msgq.h"
 #include "numeric.h"

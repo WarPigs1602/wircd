@@ -41,8 +41,8 @@ ac_default_prefix=$unet_cv_prefix
 dnl Define the input and output configuration header file.
 AC_CONFIG_HEADERS([config.h])
 
-dnl Demand at least version 2.72 of autoconf (for AS_HELP_STRING)
-AC_PREREQ([2.72])
+dnl Demand at least version 2.71 of autoconf (for AS_HELP_STRING)
+AC_PREREQ([2.71])
 
 dnl Find out what type of system we are
 AC_CANONICAL_HOST
@@ -712,6 +712,8 @@ AC_MSG_RESULT([$unet_cv_with_maxcon])
 AC_DEFINE_UNQUOTED(MAXCONNECTIONS, $unet_cv_with_maxcon,
 [Maximum number of network connections])
 
+unet_TLS
+
 dnl Finally really generate all output files:
 AC_CONFIG_FILES([Makefile ircd/Makefile ircd/test/Makefile],
     [echo timestamp > stamp-h])
@@ -735,6 +737,7 @@ ircu is now hopefully configured for your system.
   CPath:               $unet_cv_with_cpath
   LPath:               $unet_cv_with_lpath
   Maximum connections: $unet_cv_with_maxcon
+  TLS implementation:  $unet_cv_with_tls
 
   poll() engine:       $unet_cv_enable_poll
   kqueue() engine:     $unet_cv_enable_kqueue

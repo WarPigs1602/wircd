@@ -365,6 +365,11 @@ static struct FeatureDesc {
     F_I(IRCD_RES_TIMEOUT, 0, 4, 0),
     F_I(AUTH_TIMEOUT, 0, 9, 0),
     F_B(ANNOUNCE_INVITES, 0, 0, 0),
+    F_S(TLS_CACERTFILE, FEAT_NULL | FEAT_CASE | FEAT_OPER, 0, 0),
+    F_S(TLS_CACERTDIR, FEAT_NULL | FEAT_CASE | FEAT_OPER, 0, 0),
+    F_S(TLS_CIPHERS, FEAT_NULL | FEAT_CASE | FEAT_OPER, 0, 0),
+    F_B(TLS_ALLOW_SELFSIGNED, 0, 1, 0),
+    F_B(TLS_BURST_FINGERPRINT, 0, 1, 0),
 
     /* features that affect all operators */
     F_B(EXTENDED_CHECKCMD, 0, 0, 0),
@@ -390,13 +395,13 @@ static struct FeatureDesc {
     F_I(TAGMSG_COUNT_MAX, 0, 64, 0),
     F_I(TAGMSG_MAX_PER_WINDOW, 0, 20, 0),
     F_I(TAGMSG_WINDOW_SECONDS, 0, 10, 0),
-  
-  /* Cloak */
-  F_S(HOST_HIDING_PREFIX, 0, "cloak", 0),
-  F_S(HOST_HIDING_KEY1, 0, "aoAr1HnR6gl3sJ7hVz4Zb7x4YwpW", 0),
-  F_S(HOST_HIDING_KEY2, 0, "sdfjkLJKHlkjdkfjsdklfjlkjKLJ", 0),
-  F_S(HOST_HIDING_KEY3, 0, "KJklJSDFLkjLKDFJSLKjlKJFlkjS", 0),
-  F_B(WEBIRC_CLOAKING, 0, 1, 0),
+
+    /* Cloak */
+    F_S(HOST_HIDING_PREFIX, 0, "cloak", 0),
+    F_S(HOST_HIDING_KEY1, 0, "aoAr1HnR6gl3sJ7hVz4Zb7x4YwpW", 0),
+    F_S(HOST_HIDING_KEY2, 0, "sdfjkLJKHlkjdkfjsdklfjlkjKLJ", 0),
+    F_S(HOST_HIDING_KEY3, 0, "KJklJSDFLkjLKDFJSLKjlKJFlkjS", 0),
+    F_B(WEBIRC_CLOAKING, 0, 1, 0),
 
     /* HEAD_IN_SAND Features */
     F_B(HIS_SNOTICES, 0, 1, 0),

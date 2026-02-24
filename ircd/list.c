@@ -23,6 +23,7 @@
  */
 #include "config.h"
 
+#include "list.h"
 #include "client.h"
 #include "ircd.h"
 #include "ircd_alloc.h"
@@ -30,7 +31,6 @@
 #include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
-#include "list.h"
 #include "listener.h"
 #include "match.h"
 #include "numeric.h"
@@ -45,12 +45,10 @@
 #include "struct.h"
 #include "whowas.h"
 
-
 /* #include <assert.h> -- Now using assert in ircd_log.h */
-#include <stddef.h> /* offsetof */
+#include <stddef.h>  /* offsetof */
+#include <unistd.h>  /* close */
 #include <string.h>
-#include <unistd.h> /* close */
-
 
 /** Stores linked list statistics for various types of lists. */
 static struct liststats {
@@ -60,31 +58,32 @@ static struct liststats {
 } clients, connections, servs, links;
 
 /** Linked list of currently unused Client structures. */
-static struct Client *clientFreeList;
+static struct Client* clientFreeList;
 
 /** Linked list of currently unused Connection structures. */
-static struct Connection *connectionFreeList;
+static struct Connection* connectionFreeList;
 
 /** Linked list of currently unused SLink structures. */
-static struct SLink *slinkFreeList;
+static struct SLink* slinkFreeList;
 
 /** Initialize the list manipulation support system.
  * Pre-allocate MAXCONNECTIONS Client and Connection structures.
  */
-void init_list(void) {
-  struct Client *cptr;
-  struct Connection *con;
+void init_list(void)
+{
+  struct Client* cptr;
+  struct Connection* con;
   int i;
   /*
    * pre-allocate MAXCONNECTIONS clients and connections
    */
   for (i = 0; i < MAXCONNECTIONS; ++i) {
-    cptr = (struct Client *)MyMalloc(sizeof(struct Client));
+    cptr = (struct Client*) MyMalloc(sizeof(struct Client));
     cli_next(cptr) = clientFreeList;
     clientFreeList = cptr;
     clients.alloc++;
 
-    con = (struct Connection *)MyMalloc(sizeof(struct Connection));
+    con = (struct Connection*) MyMalloc(sizeof(struct Connection));
     con_next(con) = connectionFreeList;
     connectionFreeList = con;
     connections.alloc++;
@@ -96,11 +95,12 @@ void init_list(void) {
  * Otherwise, allocate a new structure.
  * @return Newly allocated Client.
  */
-static struct Client *alloc_client(void) {
-  struct Client *cptr = clientFreeList;
+static struct Client* alloc_client(void)
+{
+  struct Client* cptr = clientFreeList;
 
   if (!cptr) {
-    cptr = (struct Client *)MyMalloc(sizeof(struct Client));
+    cptr = (struct Client*) MyMalloc(sizeof(struct Client));
     clients.alloc++;
   } else
     clientFreeList = cli_next(cptr);
@@ -115,7 +115,8 @@ static struct Client *alloc_client(void) {
 /** Release a Client structure by prepending it to #clientFreeList.
  * @param[in] cptr Client that is no longer being used.
  */
-static void dealloc_client(struct Client *cptr) {
+static void dealloc_client(struct Client* cptr)
+{
   assert(cli_verify(cptr));
   assert(0 == cli_connect(cptr));
 
@@ -132,11 +133,12 @@ static void dealloc_client(struct Client *cptr) {
  * Otherwise, allocate a new structure.
  * @return Newly allocated Connection.
  */
-static struct Connection *alloc_connection(void) {
-  struct Connection *con = connectionFreeList;
+static struct Connection* alloc_connection(void)
+{
+  struct Connection* con = connectionFreeList;
 
   if (!con) {
-    con = (struct Connection *)MyMalloc(sizeof(struct Connection));
+    con = (struct Connection*) MyMalloc(sizeof(struct Connection));
     connections.alloc++;
   } else
     connectionFreeList = con_next(con);
@@ -155,7 +157,8 @@ static struct Connection *alloc_connection(void) {
  * is dereferenced.  Then it is prepended to #connectionFreeList.
  * @param[in] con Connection to free.
  */
-static void dealloc_connection(struct Connection *con) {
+static void dealloc_connection(struct Connection* con)
+{
   assert(con_verify(con));
   assert(!t_active(&(con_proc(con))));
   assert(!t_onqueue(&(con_proc(con))));
@@ -187,8 +190,9 @@ static void dealloc_connection(struct Connection *con) {
  * @param[in] status Initial Client::cli_status value.
  * @return Newly allocated and initialized Client.
  */
-struct Client *make_client(struct Client *from, int status) {
-  struct Client *cptr = 0;
+struct Client* make_client(struct Client *from, int status)
+{
+  struct Client* cptr = 0;
 
   assert(!from || cli_verify(from));
 
@@ -209,9 +213,6 @@ struct Client *make_client(struct Client *from, int status) {
     con_freeflag(con) = 0;
     con_nextnick(con) = CurrentTime - NICK_DELAY;
     con_nexttarget(con) = CurrentTime - (TARGET_DELAY * (STARTTARGETS - 1));
-    /* TAGMSG rate-limit init */
-    con_tagmsg_window(con) = CurrentTime;
-    con_tagmsg_count(con) = 0;
     con_handler(con) = UNREGISTERED_HANDLER;
     con_client(con) = cptr;
 
@@ -227,6 +228,7 @@ struct Client *make_client(struct Client *from, int status) {
   cli_status(cptr) = status;
   cli_hnext(cptr) = cptr;
   strcpy(cli_username(cptr), "");
+  strcpy(cli_tls_fingerprint(cptr), "");
 
   return cptr;
 }
@@ -234,7 +236,8 @@ struct Client *make_client(struct Client *from, int status) {
 /** Release a Connection.
  * @param[in] con Connection to free.
  */
-void free_connection(struct Connection *con) {
+void free_connection(struct Connection* con)
+{
   if (!con)
     return;
 
@@ -250,7 +253,8 @@ void free_connection(struct Connection *con) {
  * and delete the processing timer for the client.
  * @param[in] cptr Client to free.
  */
-void free_client(struct Client *cptr) {
+void free_client(struct Client* cptr)
+{
   if (!cptr)
     return;
   /*
@@ -263,7 +267,7 @@ void free_client(struct Client *cptr) {
   assert(cli_prev(cptr) == 0);
 
   Debug((DEBUG_LIST, "Freeing client %s [%p], connection %p", cli_name(cptr),
-         cptr, cli_connect(cptr)));
+	 cptr, cli_connect(cptr)));
 
   if (cli_auth(cptr))
     destroy_auth_request(cli_auth(cptr));
@@ -279,9 +283,9 @@ void free_client(struct Client *cptr) {
       dealloc_connection(cli_connect(cptr)); /* connection not open anymore */
     else {
       if (-1 < cli_fd(cptr) && cli_freeflag(cptr) & FREEFLAG_SOCKET)
-        socket_del(&(cli_socket(cptr))); /* queue a socket delete */
+	socket_del(&(cli_socket(cptr))); /* queue a socket delete */
       if (cli_freeflag(cptr) & FREEFLAG_TIMER)
-        timer_del(&(cli_proc(cptr))); /* queue a timer delete */
+	timer_del(&(cli_proc(cptr))); /* queue a timer delete */
     }
   }
 
@@ -296,13 +300,15 @@ void free_client(struct Client *cptr) {
  * @param[in] cptr %Client to make into a server.
  * @return The value of cli_serv(\a cptr).
  */
-struct Server *make_server(struct Client *cptr) {
+struct Server *make_server(struct Client *cptr)
+{
   struct Server *serv = cli_serv(cptr);
 
   assert(cli_verify(cptr));
 
-  if (!serv) {
-    serv = (struct Server *)MyMalloc(sizeof(struct Server));
+  if (!serv)
+  {
+    serv = (struct Server*) MyMalloc(sizeof(struct Server));
     assert(0 != serv);
     memset(serv, 0, sizeof(struct Server)); /* All variables are 0 by default */
     servs.inuse++;
@@ -310,7 +316,7 @@ struct Server *make_server(struct Client *cptr) {
     cli_serv(cptr) = serv;
     cli_serv(cptr)->lag = 60000;
     *serv->by = '\0';
-    DupString(serv->last_error_msg, "<>"); /* String must be non-empty */
+    DupString(serv->last_error_msg, "<>");      /* String must be non-empty */
   }
   return cli_serv(cptr);
 }
@@ -321,7 +327,8 @@ struct Server *make_server(struct Client *cptr) {
  * Client::cli_serv fields, and finally calls free_client() on it.
  * @param[in] cptr Client to remove from lists and free.
  */
-void remove_client_from_list(struct Client *cptr) {
+void remove_client_from_list(struct Client *cptr)
+{
   assert(cli_verify(cptr));
   assert(con_verify(cli_connect(cptr)));
   assert(!cli_prev(cptr) || cli_verify(cli_prev(cptr)));
@@ -330,9 +337,10 @@ void remove_client_from_list(struct Client *cptr) {
 
   /* Only try remove cptr from the list if it IS in the list.
    * cli_next(cptr) cannot be NULL here, as &me is always the end
-   * the list, and we never remove &me.    -GW
+   * the list, and we never remove &me.    -GW 
    */
-  if (cli_next(cptr)) {
+  if(cli_next(cptr))
+  {
     if (cli_prev(cptr))
       cli_next(cli_prev(cptr)) = cli_next(cptr);
     else {
@@ -370,7 +378,8 @@ void remove_client_from_list(struct Client *cptr) {
 /** Link \a cptr into #GlobalClientList.
  * @param[in] cptr Client to link into the global list.
  */
-void add_client_to_list(struct Client *cptr) {
+void add_client_to_list(struct Client *cptr)
+{
   assert(cli_verify(cptr));
   assert(cli_next(cptr) == 0);
   assert(cli_prev(cptr) == 0);
@@ -417,12 +426,13 @@ void verify_client_list(void)
  * allocates a new one from the heap.
  * @return Newly allocated list element.
  */
-struct SLink *make_link(void) {
-  struct SLink *lp = slinkFreeList;
+struct SLink* make_link(void)
+{
+  struct SLink* lp = slinkFreeList;
   if (lp)
     slinkFreeList = lp->next;
   else {
-    lp = (struct SLink *)MyMalloc(sizeof(struct SLink));
+    lp = (struct SLink*) MyMalloc(sizeof(struct SLink));
     links.alloc++;
   }
   assert(0 != lp);
@@ -434,7 +444,8 @@ struct SLink *make_link(void) {
 /** Release a singly linked list element.
  * @param[in] lp List element to mark as unused.
  */
-void free_link(struct SLink *lp) {
+void free_link(struct SLink* lp)
+{
   if (lp) {
     lp->next = slinkFreeList;
     slinkFreeList = lp;
@@ -450,8 +461,9 @@ void free_link(struct SLink *lp) {
  * @param[in] cp %Client to put in newly allocated element.
  * @return Allocated link structure (same as \a lpp on output).
  */
-struct DLink *add_dlink(struct DLink **lpp, struct Client *cp) {
-  struct DLink *lp = (struct DLink *)MyMalloc(sizeof(struct DLink));
+struct DLink *add_dlink(struct DLink **lpp, struct Client *cp)
+{
+  struct DLink* lp = (struct DLink*) MyMalloc(sizeof(struct DLink));
   assert(0 != lp);
   lp->value.cptr = cp;
   lp->prev = 0;
@@ -465,14 +477,16 @@ struct DLink *add_dlink(struct DLink **lpp, struct Client *cp) {
  * @param[out] lpp Pointer to next list element.
  * @param[in] lp List node to unlink.
  */
-void remove_dlink(struct DLink **lpp, struct DLink *lp) {
+void remove_dlink(struct DLink **lpp, struct DLink *lp)
+{
   assert(0 != lpp);
   assert(0 != lp);
 
   if (lp->prev) {
     if ((lp->prev->next = lp->next))
       lp->next->prev = lp->prev;
-  } else if ((*lpp = lp->next))
+  }
+  else if ((*lpp = lp->next))
     lp->next->prev = NULL;
   MyFree(lp);
 }
@@ -484,11 +498,12 @@ void remove_dlink(struct DLink **lpp, struct DLink *lp) {
  * @param[in,out] totals If non-null, accumulates item counts and memory usage.
  */
 void send_liststats(struct Client *cptr, const struct liststats *lstats,
-                    const char *itemname, struct liststats *totals) {
-  send_reply(cptr, SND_EXPLICIT | RPL_STATSDEBUG,
-             ":%s: inuse %zu(%zu) alloc %zu", itemname, lstats->inuse,
-             lstats->mem, lstats->alloc);
-  if (totals) {
+                    const char *itemname, struct liststats *totals)
+{
+  send_reply(cptr, SND_EXPLICIT | RPL_STATSDEBUG, ":%s: inuse %zu(%zu) alloc %zu",
+	     itemname, lstats->inuse, lstats->mem, lstats->alloc);
+  if (totals)
+  {
     totals->inuse += lstats->inuse;
     totals->alloc += lstats->alloc;
     totals->mem += lstats->mem;
@@ -499,7 +514,8 @@ void send_liststats(struct Client *cptr, const struct liststats *lstats,
  * @param[in] cptr Client requesting information.
  * @param[in] name Unused pointer.
  */
-void send_listinfo(struct Client *cptr, char *name) {
+void send_listinfo(struct Client *cptr, char *name)
+{
   struct liststats total;
   struct liststats confs;
   struct ConfItem *conf;

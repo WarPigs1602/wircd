@@ -398,6 +398,7 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_YOUWILLBEBANNED  466
 #define ERR_KEYSET           467        /* Undernet extension */
 #define ERR_INVALIDUSERNAME  468        /* Undernet extension */
+#define ERR_TLSONLYCHAN      469        /* Nefarious, Undernet */
 /* 	ERR_ONLYSERVERSCANCHANGE 468	   Dalnet,unreal */
 /*	ERR_LINKSET	     469	unreal */
 /*	ERR_LINKCHANNEL	     470	unreal */
@@ -474,6 +475,7 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_INVALIDKEY       525        /* Undernet extension */
 #define ERR_BADHOSTMASK      530	/* QuakeNet extension -froo */
 #define ERR_HOSTUNAVAIL      531	/* QuakeNet extension -froo */
+#define ERR_TLSCLIFINGERPRINT 532   /* Nefarious & Undernet extension */
 
 #define ERR_NOTLOWEROPLEVEL  560	/* Undernet extension */
 #define ERR_NOTMANAGER       561	/* Undernet extension */
@@ -483,6 +485,7 @@ extern const struct Numeric* get_error_numeric(int err);
 /*      ERR_NOMANAGER_LONG   565	no longer used */
 #define ERR_NOMANAGER        566	/* Undernet extension */
 #define ERR_UPASS_SAME_APASS 567        /* Undernet extension */
+#define RPL_WHOISSECURE      671        /* Nefarious, Undernet */
 
 #define RPL_LOGGEDIN         900    /* IRCv3 */
 #define RPL_LOGGEDOUT        901    /* IRCv3 */

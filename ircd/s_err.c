@@ -970,7 +970,7 @@ static Numeric replyTable[] = {
 /* 468 */
   { ERR_INVALIDUSERNAME, 0, "468" },
 /* 469 */
-  { 0 },
+  { ERR_TLSONLYCHAN, "%s :Cannot join channel (+Z)", "469" },
 /* 470 */
   { 0 },
 /* 471 */
@@ -1096,7 +1096,7 @@ static Numeric replyTable[] = {
 /* 531 */
   { ERR_HOSTUNAVAIL, "%s :sethost not found", "531" },
 /* 532 */
-  { 0 },
+  { ERR_TLSCLIFINGERPRINT, ":TLS certificate fingerprint did not match", "532" },
 /* 533 */
   { 0 },
 /* 534 */
@@ -1374,7 +1374,7 @@ static Numeric replyTable[] = {
 /* 670 */
   { 0 },
 /* 671 */
-  { 0 },
+  { RPL_WHOISSECURE, "%s :is using a secure connection", "671" },
 /* 672 */
   { 0 },
 /* 673 */
