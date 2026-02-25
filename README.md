@@ -1,6 +1,6 @@
 # wircd (ircu2.10-based IRC daemon)
 
-`wircd` is a fork of the Undernet IRC daemon (`ircu2.10`).
+`wircd` is a fork of the Undernet IRC daemon [ircu2.10](https://github.com/UndernetIRC/ircu2).
 It provides a full IRC server with P10 server-link support, classic client and
 operator command handling, multiple scalable event engines, optional TLS
 backends, and runtime-configurable behavior through feature settings.
@@ -132,48 +132,6 @@ Credential/hash helpers:
 - Silence lists (`m_silence.c`)
 - G-line and jupe handling (`gline.c`, `jupe.c`, command handlers)
 - Runtime feature toggles (`ircd_features.c`, `doc/readme.features`)
-
-## Command coverage
-
-Command handlers are implemented as dedicated `m_*.c` modules.
-
-### Client/session commands
-
-`PASS`, `NICK`, `USER`, `QUIT`, `PING`, `PONG`, `AWAY`, `AUTHENTICATE`,
-`CAP`, `TAGMSG`
-
-### Messaging commands
-
-`PRIVMSG`, `NOTICE`, `CPRIVMSG`, `CNOTICE`, `WALLOPS`, `WALLCHOPS`,
-`WALLUSERS`, `WALLVOICES`
-
-### Channel commands
-
-`JOIN`, `PART`, `MODE`, `TOPIC`, `NAMES`, `INVITE`, `KICK`, `LIST`,
-`CREATE`, `CLEARMODE`
-
-### Discovery/statistics commands
-
-`WHO`, `WHOIS`, `WHOWAS`, `USERHOST`, `USERIP`, `ISON`, `LUSERS`, `MAP`,
-`LINKS`, `TRACE`, `STATS`
-
-### Server/link commands
-
-`SERVER`, `SQUIT`, `CONNECT`, `BURST`, `ENDBURST`, `PROTO`, `ERROR`
-
-### Operator/admin commands
-
-`OPER`, `KILL`, `GLINE`, `JUPE`, `OPMODE`, `REHASH`, `RESTART`, `DIE`,
-`ADMIN`, `INFO`, `VERSION`, `TIME`, `SET`, `GET`, `RESET`, `CHECK`, `HELP`
-
-### Service/query commands
-
-`ACCOUNT`, `PSEUDO`, `XQUERY`, `XREPLY`
-
-### Diagnostic/utility commands
-
-`RPING`, `RPONG`, `UPING`, `SETHOST`, `SETTIME`, `MOTD`, `DEFAULTS`,
-`DESTRUCT`, `DESYNCH`
 
 ## Operations and maintenance
 
