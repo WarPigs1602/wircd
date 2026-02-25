@@ -65,7 +65,6 @@
 #include "s_user.h"
 #include "send.h"
 
-
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -74,7 +73,6 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
 
 /** Pending operations during registration. */
 enum AuthRequestFlag {
@@ -2138,37 +2136,35 @@ static int iauth_cmd_kill(struct IAuth *iauth, struct Client *cli, int parc,
  */
 static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli, int parc,
                           char **params) {
-  enum { CMD_IDX = 0, NICK_IDX = 1, ACCOUNT_IDX = 2, TS_IDX = 3, ID_IDX = 4 };
   assert(cli_auth(cli) != NULL);
 
-  if (parc < 1 || EmptyString(params[CMD_IDX])) {
+  if (parc < 1 || EmptyString(params[0])) {
     send_reply(cli, ERR_SASLFAIL);
     return 0;
   }
 
-  const char *cmd = params[CMD_IDX];
+  char *cmd = params[0];
 
   if (!ircd_strcmp(cmd, "Q")) {
-    if (parc > NICK_IDX && !EmptyString(params[NICK_IDX]))
-      sendcmdto_one(&me, CMD_AUTHENTICATE, cli, params[NICK_IDX]);
+    if (parc > 1 && !EmptyString(params[1]))
+      sendcmdto_one(&me, CMD_AUTHENTICATE, cli, params[1]);
     else
       send_reply(cli, ERR_SASLFAIL);
   } else if (!ircd_strcmp(cmd, "O")) {
     send_reply(cli, ERR_SASLABORTED);
   } else if (!ircd_strcmp(cmd, "M")) {
-    if (parc > NICK_IDX)
+    if (parc > 1)
       send_reply(cli, RPL_SASLMECHS, params[parc - 1]);
     send_reply(cli, ERR_SASLFAIL);
   } else if (!ircd_strcmp(cmd, "S")) {
-    if (parc <= ID_IDX || EmptyString(params[TS_IDX]) ||
-        EmptyString(params[ID_IDX])) {
+    if (parc <= 4 || EmptyString(params[3]) || EmptyString(params[4])) {
       send_reply(cli, ERR_SASLFAIL);
       return 0;
     }
-    const char *nick = params[NICK_IDX];
-    const char *account = params[ACCOUNT_IDX];
-    const char *timestamp = params[TS_IDX];
-    const char *id = params[ID_IDX];
+    char *nick = params[1];
+    char *account = params[2];
+    char *timestamp = params[3];
+    char *id = params[4];
 
     ircd_strncpy(cli_user(cli)->account, account, ACCOUNTLEN);
     cli_user(cli)->acc_create = atoi(timestamp);
