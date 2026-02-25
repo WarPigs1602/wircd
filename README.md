@@ -26,7 +26,7 @@ backends, and runtime-configurable behavior through feature settings.
 
 - Protocol family: **P10** (server-to-server)
 - Upstream lineage: **ircu2.10.12**
-- Repository patch level: `19+wircd(1.0)` (see `include/patchlevel.h`)
+- Repository patch level: `19+wircd(1.0)`
 - Configuration format: block-based `ircd.conf` syntax (see `doc/example.conf`)
 - Build system: autotools-style (`configure` + `make`)
 
@@ -96,7 +96,7 @@ Capabilities are implemented in `ircd/` and declared in `include/`.
 - Connection accept/listen lifecycle
 - Packet parsing and send/receive queueing
 - Server registration and relay logic
-- DNS resolver subsystem (`ircd_res.c`, `ircd_reslib.c`)
+- DNS resolver subsystem
 - Memory and utility layers (`ircd_alloc`, snprintf/string helpers)
 - Hash/list management for runtime objects (clients/channels/state)
 
@@ -104,34 +104,61 @@ Capabilities are implemented in `ircd/` and declared in `include/`.
 
 Platform-oriented polling backends:
 
-- `engine_select.c`
-- `engine_poll.c`
-- `engine_epoll.c`
-- `engine_kqueue.c`
-- `engine_devpoll.c`
+- `select`
+- `poll`
+- `epoll`
+- `kqueue`
+- `/dev/poll`
 
 ### TLS and crypto
 
 Build-dependent TLS providers:
 
-- OpenSSL (`tls_openssl.c`)
-- GnuTLS (`tls_gnutls.c`)
-- libtls (`tls_libtls.c`)
-- no-TLS stub (`tls_none.c`)
+- OpenSSL
+- GnuTLS
+- libtls
+- no-TLS stub
+
+Runtime TLS functionality:
+
+- TLS listener ports via listener/port configuration
+- TLS-enabled server links (`CONF_CONNECT_TLS`)
+- Optional peer certificate fingerprint checks for server links
+- Configurable CA/cipher defaults through features (`TLS_CACERTFILE`,
+  `TLS_CACERTDIR`, `TLS_CIPHERS`, `TLS_ALLOW_SELFSIGNED`,
+  `TLS_BURST_FINGERPRINT`)
 
 Credential/hash helpers:
 
-- Multiple oper password mechanisms (`ircd_crypt_*`)
-- MD5 helpers (`ircd_md5.c`, `md5.c`)
-- Password generation utility (`ircd/umkpasswd.c`)
+- Multiple oper password mechanisms
+- MD5 helpers
+- Password generation utility (`umkpasswd`)
+
+### IRCv3 support (implemented)
+
+Client capability negotiation and tag parsing are implemented.
+
+Currently advertised/implemented IRCv3 capabilities (feature-gated):
+
+- `account-notify`
+- `away-notify`
+- `chghost`
+- `echo-message`
+- `extended-join`
+- `invite-notify`
+- `message-tags`
+- `sasl`
+
+Related command support includes `CAP`, `AUTHENTICATE` (SASL flow), and
+`TAGMSG` for `message-tags` capable clients.
 
 ### Identity and policy controls
 
-- Host hiding/cloaking support (`cloak.c`, related headers)
-- IP validation and checking (`IPcheck.c`)
-- Silence lists (`m_silence.c`)
-- G-line and jupe handling (`gline.c`, `jupe.c`, command handlers)
-- Runtime feature toggles (`ircd_features.c`, `doc/readme.features`)
+- Host hiding/cloaking support
+- IP validation and checking
+- Silence lists
+- G-line and jupe handling
+- Runtime feature toggles (`doc/readme.features`)
 
 ## Operations and maintenance
 
