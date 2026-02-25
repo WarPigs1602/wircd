@@ -721,7 +721,7 @@ AC_OUTPUT
 
 dnl Report configuration
 echo "
-ircu is now hopefully configured for your system.
+wircd is now hopefully configured for your system.
 
   Host system:         $host_os
   Prefix:              $prefix
