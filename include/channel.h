@@ -83,8 +83,12 @@ struct Client;
 #define CHFL_DELAYED            0x40000 /**< User's join message is delayed */
 #define CHFL_DELAYED_TARGET     0x80000 /**< User has not used a target on this channel */
 
+#define CHFL_EXCEPTVALID        0x100000 /**< Ban exception is valid */
+#define CHFL_EXCEPTION          0x200000 /**< Ban exception */
+
 #define CHFL_OVERLAP         (CHFL_CHANOP | CHFL_VOICE)
 #define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
+#define CHFL_EXCEPTVALIDMASK  (CHFL_EXCEPTVALID | CHFL_EXCEPTION) 
 #define CHFL_VOICED_OR_OPPED (CHFL_CHANOP | CHFL_VOICE)
 
 /* Channel Visibility macros */
@@ -117,15 +121,17 @@ struct Client;
 #define MODE_NOPARTMSGS 0x800000       /**< +P No part messages */
 #define MODE_MODERATENOREG 0x1000000    /**< +M Moderate unauthed users */
 #define MODE_TLSONLY       0x2000000    /**< +Z TLS users only */
+#define MODE_EXCEPTION     0x4000000    /**< +e Ban exception */
+#define MODE_NOKNOCK      0x8000000    /**< +K No knock */
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
+#define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_EXCEPTION|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
 
 /** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbiklmnopstUvrDdRcCPM" : "biklmnopstvrDdRcCPM"
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeiklmnopstUvrDdRcCPMK" : "beiklmnopstvrDdRcCPMK"
 /** Available Channel modes that take parameters */
-#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbkloUv" : "bklov"
+#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbekloUv" : "beklov"
 
 #define HoldChannel(x)          (!(x))
 /** name invisible */
@@ -210,6 +216,8 @@ struct Membership {
 #define IsDeopped(x)        ((x)->status & CHFL_DEOPPED)
 #define IsBanned(x)         ((x)->status & CHFL_BANNED)
 #define IsBanValid(x)       ((x)->status & CHFL_BANVALID)
+#define IsExcepted(x)       ((x)->status & CHFL_EXCEPTION)
+#define IsExceptValid(x)    ((x)->status & CHFL_EXCEPTVALID)
 #define IsChanOp(x)         ((x)->status & CHFL_CHANOP)
 #define OpLevel(x)          ((x)->oplevel)
 #define HasVoice(x)         ((x)->status & CHFL_VOICE)
@@ -223,6 +231,8 @@ struct Membership {
 
 #define SetBanned(x)        ((x)->status |= CHFL_BANNED)
 #define SetBanValid(x)      ((x)->status |= CHFL_BANVALID)
+#define SetExcepted(x)      ((x)->status |= CHFL_EXCEPTION)
+#define SetExceptValid(x)   ((x)->status |= CHFL_EXCEPTVALID)
 #define SetDeopped(x)       ((x)->status |= CHFL_DEOPPED)
 #define SetServOpOk(x)      ((x)->status |= CHFL_SERVOPOK)
 #define SetBurstJoined(x)   ((x)->status |= CHFL_BURST_JOINED)
@@ -234,6 +244,8 @@ struct Membership {
 
 #define ClearBanned(x)      ((x)->status &= ~CHFL_BANNED)
 #define ClearBanValid(x)    ((x)->status &= ~CHFL_BANVALID)
+#define ClearExcepted(x)    ((x)->status &= ~CHFL_EXCEPTION)
+#define ClearExceptValid(x) ((x)->status &= ~CHFL_EXCEPTVALID)
 #define ClearDeopped(x)     ((x)->status &= ~CHFL_DEOPPED)
 #define ClearServOpOk(x)    ((x)->status &= ~CHFL_SERVOPOK)
 #define ClearBurstJoined(x) ((x)->status &= ~CHFL_BURST_JOINED)
@@ -257,6 +269,15 @@ struct Mode {
 #define BAN_DEL            0x4000  /**< Ban is being removed */
 #define BAN_ADD            0x8000  /**< Ban is being added */
 
+#define EXCEPT_IPMASK      0x0001  /**< exception mask is an IP-number mask */
+#define EXCEPT_BURSTED     0x0002  /**< Exception part of last BURST */
+#define EXCEPT_BURST_WIPEOUT 0x0004 /**< Exception will be wiped at EOB */
+#define EXCEPT_OVERLAPPED     0x0008  /**< Exception overlapped, need bounce */
+#define EXCEPT             0x0010  /**< Exception */
+#define EXCEPT_DEL         0x4000  /**< Exception is being removed */
+#define EXCEPT_ADD         0x8000  /**< Exception is being added */
+
+
 /** A single ban for a channel. */
 struct Ban {
   struct Ban* next;           /**< next ban in the channel */
@@ -267,6 +288,18 @@ struct Ban {
   unsigned char addrbits;     /**< netmask length for BAN_IPMASK bans */
   char who[NICKLEN+1];        /**< name of client that set the ban */
   char banstr[NICKLEN+USERLEN+HOSTLEN+3];  /**< hostmask that the ban matches */
+};
+
+/** A single ban exception for a channel. */
+struct Except {
+  struct Except* next;           /**< next exception in the channel */
+  struct irc_in_addr address; /**< address for EXCEPT_IPMASK exceptions */
+  time_t when;                /**< timestamp when exception was added */
+  unsigned short flags;       /**< modifier flags for the exception */
+  unsigned char nu_len;       /**< length of nick!user part of exceptstr */
+  unsigned char addrbits;     /**< netmask length for EXCEPT_IPMASK exceptions */
+  char who[NICKLEN+1];        /**< name of client that set the exception */
+  char exceptstr[NICKLEN+USERLEN+HOSTLEN+3];  /**< hostmask that the exception matches */
 };
 
 /** Information about a channel */
@@ -281,6 +314,7 @@ struct Channel {
   struct Membership* members;	   /**< Pointer to the clients on this channel*/
   struct SLink*      invites;	   /**< List of invites on this channel */
   struct Ban*        banlist;      /**< List of bans on this channel */
+  struct Except*     exceptlist;   /**< List of exceptions on this channel */
   struct Mode        mode;	   /**< This channels mode */
   char               topic[TOPICLEN + 1]; /**< Channels topic */
   char               topic_nick[NICKLEN + 1]; /**< Nick of the person who set
@@ -431,6 +465,7 @@ extern int modebuf_flush(struct ModeBuf *mbuf);
 extern void modebuf_extract(struct ModeBuf *mbuf, char *buf);
 
 extern void mode_ban_invalidate(struct Channel *chan);
+extern void mode_exception_invalidate(struct Channel *chan);
 extern void mode_invite_clear(struct Channel *chan);
 
 extern int mode_parse(struct ModeBuf *mbuf, struct Client *cptr,
@@ -455,7 +490,11 @@ extern void joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan,
 extern int joinbuf_flush(struct JoinBuf *jbuf);
 extern struct Ban *make_ban(const char *banstr);
 extern struct Ban *find_ban(struct Client *cptr, struct Ban *banlist);
+extern struct Except *make_except(const char *exceptstr);
+extern struct Except *find_except(struct Client *cptr, struct Except *exceptlist);
 extern int apply_ban(struct Ban **banlist, struct Ban *newban, int free);
 extern void free_ban(struct Ban *ban);
+extern void free_except(struct Except *except);
+extern int apply_except(struct Except **exceptlist, struct Except *newexc, int free);
 
 #endif /* INCLUDED_channel_h */

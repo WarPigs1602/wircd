@@ -161,6 +161,7 @@ static void free_slist(struct SLink **link) {
 %token CONTACT
 %token CONNECT
 %token CLASS
+%token CLOAK
 %token PINGFREQ
 %token CONNECTFREQ
 %token MAXFLOOD
@@ -882,7 +883,7 @@ portblock: PORT {
 };
 portitems: portitem portitems | portitem;
 portitem: portnumber | portvhost | portvhostnumber | portmask | portserver
-  | portwebirc | porthidden | porttls | tlsciphers;
+  | portwebirc | portcloak | porthidden | porttls | tlsciphers;
 portnumber: PORT '=' address_family NUMBER ';'
 {
   if ($4 < 1 || $4 > 65535) {
@@ -949,6 +950,14 @@ portwebirc: WEBIRC '=' YES ';'
 } | WEBIRC '=' NO ';'
 {
   FlagClr(&listen_flags, LISTEN_WEBIRC);
+};
+
+portcloak: CLOAK '=' YES ';'
+{
+  FlagSet(&listen_flags, LISTEN_CLOAK);
+} | CLOAK '=' NO ';'
+{
+  FlagClr(&listen_flags, LISTEN_CLOAK);
 };
 
 porttls: TLS '=' YES ';'

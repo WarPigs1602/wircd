@@ -75,6 +75,7 @@ static const struct lexer_token tokens[] = {
   { "check", TPRIV_CHECK },
   { "class", CLASS },
   { "client", CLIENT },
+  { "cloak", CLOAK },
   { "connect", CONNECT },
   { "connectfreq", CONNECTFREQ },
   { "contact", CONTACT },

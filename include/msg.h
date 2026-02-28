@@ -392,6 +392,10 @@ struct Client;
 #define TOK_TAGMSG "TAGMSG"
 #define CMD_TAGMSG MSG_TAGMSG, TOK_TAGMSG
 
+#define MSG_KNOCK               "KNOCK"         /* KNOC */
+#define TOK_KNOCK               "KNOCK"
+#define CMD_KNOCK		MSG_KNOCK, TOK_KNOCK
+
 /* The previous non-standard pseudo commands for typing indicators
  * (@+TYPING=ACTIVE, @+TYPING=PAUSED, @+TYPING=DONE and draft variants)
  * have been removed in favour of generic IRCv3 message tags transported

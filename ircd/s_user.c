@@ -41,6 +41,7 @@
 #include "ircd_snprintf.h"
 #include "ircd_string.h"
 #include "list.h"
+#include "listener.h"
 #include "match.h"
 #include "motd.h"
 #include "msg.h"
@@ -399,8 +400,8 @@ int register_user(struct Client *cptr, struct Client *sptr) {
     SetUser(sptr);
     cli_handler(sptr) = CLIENT_HANDLER;
 
-    if (MyConnect(sptr) && feature_bool(FEAT_WEBIRC_CLOAKING) &&
-        IsWebirc(sptr)) {
+    if (MyConnect(sptr) &&
+      (cli_listener(sptr) && listener_cloak(cli_listener(sptr)))) {
       set_cloakhost(sptr, cli_user(sptr)->realhost);
     }
 
@@ -2065,8 +2066,6 @@ static char *IsVhostPass(char *hostmask) {
 }
 
 int set_cloakhost(struct Client *cptr, char *hostmask) {
-  if (!feature_bool(FEAT_WEBIRC_CLOAKING))
-    return 0;
   if (!cptr || !hostmask)
     return 0;
 
