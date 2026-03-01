@@ -83,7 +83,6 @@
 
 #include "IPcheck.h"
 #include "client.h"
-#include "gline.h"
 #include "hash.h"
 #include "ircd.h"
 #include "ircd_chattr.h"
@@ -99,6 +98,7 @@
 #include "s_user.h"
 #include "send.h"
 #include "sys.h"
+#include "gline.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdlib.h>
@@ -186,7 +186,7 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     send_reply(sptr, ERR_ERRONEUSNICKNAME, nick);
     return 0;
   }
-
+  
   /* 
    * Check if this is a LOCAL user trying to use a reserved (Juped)
    * nick, if so tell him that it's a nick in use...
@@ -253,8 +253,8 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
    * the message below.
    */
   if (IsUnknown(acptr) && MyConnect(acptr)) {
-    ++ServerStats->is_reg_collided;
-    IPcheck_connect_fail(acptr, 0);
+    if (IsIPChecked(acptr))
+      IPcheck_connect_fail(acptr, 0);
     exit_client(cptr, acptr, &me, "Overridden by other sign on");
     return set_nick_name(cptr, sptr, nick, parc, parv);
   }
@@ -272,10 +272,12 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
  * parv[0] = sender prefix
  * parv[1] = nickname
  *
- * If from server, source is client:
+ * If from server, source is client (nick change from remote client):
  *   parv[2] = timestamp
+ *   Example: ABAAA N newnick 1234567890
+ *   In P10 protocol, numeric clients send: <numeric> N <newnick> <timestamp>
  *
- * Source is server:
+ * Source is server (new client introduction):
  *   parv[2] = hopcount
  *   parv[3] = timestamp
  *   parv[4] = username
@@ -298,9 +300,6 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   assert(0 != sptr);
   assert(IsServer(cptr));
 
-  if (sptr == NULL)
-    return 0;
-
   if ((IsServer(sptr) && parc < 8) || parc < 3)
   {
     sendto_opmask_butone(0, SNO_OLDSNO, "bad NICK param count for %s from %C",
@@ -319,17 +318,17 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   }
   else
   {
+    /* Remote client nick change */
     lastnick = atoi(parv[2]); 
     if (lastnick > OLDEST_TS && !IsBurstOrBurstAck(sptr))
       cli_serv(cli_user(sptr)->server)->lag = TStime() - lastnick;
   }
   /*
-   * If do_nick_name() returns a null name OR if the server sent a nick
-   * name and do_nick_name() changed it in some way (due to rules of nick
-   * creation) then reject it. If from a server and we reject it,
-   * and KILL it. -avalon 4/4/92
+   * Reject invalid nicks. For server-introduced clients, also reject if
+   * nickname normalization changes the value. For remote nick changes, allow
+   * the normalized nickname.
    */
-  if (!do_nick_name(nick) || strcmp(nick, parv[1]))
+  if (!do_nick_name(nick) || (IsServer(sptr) && strcmp(nick, parv[1])))
   {
     send_reply(sptr, ERR_ERRONEUSNICKNAME, parv[1]);
     
@@ -386,8 +385,8 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
    */
   if (IsUnknown(acptr) && MyConnect(acptr))
   {
-    ++ServerStats->is_reg_collided;
-    IPcheck_connect_fail(acptr, 0);
+  ++ServerStats->is_reg_collided;
+  IPcheck_connect_fail(acptr, 0);
     exit_client(cptr, acptr, &me, "Overridden by other sign on");
     return set_nick_name(cptr, sptr, nick, parc, parv);
   }
@@ -429,7 +428,8 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   else
   {
     /*
-     * A NICK change has collided (e.g. message type ":old NICK new").
+     * A NICK change has collided (e.g. message type ":old NICK new" or "ABAAA N new").
+     * This handles nick changes from remote clients in P10 protocol.
      *
      * compare IP address and username
      */
@@ -503,4 +503,40 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   if (sptr == NULL)
     return 0;
   return set_nick_name(cptr, sptr, nick, parc, parv);
+}
+
+/*
+ * ms_sn - server message handler for remote nick changes only
+ * parv[0] = sender prefix (server)
+ * parv[1] = target client numeric (YYXXX)
+ * parv[2] = new nickname
+ * parv[3] = timestamp (optional)
+ */
+int ms_sn(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
+{
+  struct Client* acptr;
+  char* nick_parv[4];
+
+  assert(0 != cptr);
+  assert(0 != sptr);
+  assert(IsServer(cptr));
+
+  if (parc < 3)
+    return need_more_params(sptr, "SN");
+
+  if (!IsServer(sptr))
+    return protocol_violation(cptr, "SN from non-server %s", cli_name(sptr));
+
+  if (!(acptr = findNUser(parv[1])))
+    return 0; /* Ignore SN for a user that already QUIT */
+
+  nick_parv[0] = cli_name(acptr);
+  nick_parv[1] = parv[2];
+  if (parc > 3)
+    nick_parv[2] = parv[3];
+  else
+    nick_parv[2] = "0";
+  nick_parv[3] = 0;
+
+  return ms_nick(cptr, acptr, 3, nick_parv);
 }

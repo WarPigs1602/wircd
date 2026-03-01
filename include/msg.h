@@ -72,6 +72,10 @@ struct Client;
 #define TOK_NICK                "N"
 #define CMD_NICK		MSG_NICK, TOK_NICK
 
+#define MSG_SN                  "SN"            /* SN   */
+#define TOK_SN                  "SN"
+#define CMD_SN			MSG_SN, TOK_SN
+
 #define MSG_SERVER              "SERVER"        /* SERV */
 #define TOK_SERVER              "S"
 #define CMD_SERVER		MSG_SERVER, TOK_SERVER

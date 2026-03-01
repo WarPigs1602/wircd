@@ -123,8 +123,17 @@ struct Message msgtab[] = {
      MFLG_SLOW | MFLG_UNREG,
      0,
      NULL,
+      /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+      {m_nick, m_nick, ms_nick, m_nick, ms_nick}},
+    {MSG_SN,
+     TOK_SN,
+     0,
+     MAXPARA,
+     MFLG_SLOW,
+     0,
+     NULL,
      /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-     {m_nick, m_nick, ms_nick, m_nick, m_ignore}},
+     {m_ignore, m_ignore, ms_sn, m_ignore, m_ignore}},
     {MSG_NOTICE,
      TOK_NOTICE,
      0,

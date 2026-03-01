@@ -581,13 +581,14 @@ static char umodeBuf[BUFSIZE];
  * @param[in] parv Argument list to NICK.
  * @return CPTR_KILLED if \a cptr was killed, else 0.
  */
-int set_nick_name(struct Client *cptr, struct Client *sptr, const char *nick,
-                  int parc, char *parv[]) {
+int set_nick_name(struct Client* cptr, struct Client* sptr,
+                  const char* nick, int parc, char* parv[])
+{
   if (IsServer(sptr)) {
     /*
      * A server introducing a new client, change source
      */
-    struct Client *new_client = make_client(cptr, STAT_UNKNOWN);
+    struct Client* new_client = make_client(cptr, STAT_UNKNOWN);
     assert(0 != new_client);
 
     cli_hopcount(new_client) = atoi(parv[2]);
@@ -608,7 +609,7 @@ int set_nick_name(struct Client *cptr, struct Client *sptr, const char *nick,
     add_client_to_list(new_client);
     hAddClient(new_client);
 
-    cli_serv(sptr)->ghost = 0; /* :server NICK means end of net.burst */
+    cli_serv(sptr)->ghost = 0;        /* :server NICK means end of net.burst */
     ircd_strncpy(cli_username(new_client), parv[4], USERLEN);
     ircd_strncpy(cli_user(new_client)->username, parv[4], USERLEN);
     ircd_strncpy(cli_user(new_client)->realusername, parv[4], USERLEN);
@@ -620,11 +621,12 @@ int set_nick_name(struct Client *cptr, struct Client *sptr, const char *nick,
 
     if (parc > 7 && *parv[6] == '+') {
       /* (parc-4) -3 for the ip, numeric nick, realname */
-      set_user_mode(cptr, new_client, parc - 7, parv + 4, ALLOWMODES_ANY);
+      set_user_mode(cptr, new_client, parc-7, parv+4, ALLOWMODES_ANY);
     }
 
     return register_user(cptr, new_client);
-  } else if ((cli_name(sptr))[0]) {
+  }
+  else if ((cli_name(sptr))[0]) {
     /*
      * Client changing its nick
      *
@@ -632,11 +634,10 @@ int set_nick_name(struct Client *cptr, struct Client *sptr, const char *nick,
      * if client is on any channels where it is currently
      * banned.  If so, do not allow the nick change to occur.
      */
-    if (MyUser(sptr)) {
-      const char *channel_name;
+    if (MyUser(sptr) && cptr == sptr) {
+      const char* channel_name;
       struct Membership *member;
-      if ((channel_name = find_no_nickchange_channel(sptr)) &&
-          !IsXtraOp(sptr)) {
+      if ((channel_name = find_no_nickchange_channel(sptr)) && !IsXtraOp(sptr)) {
         return send_reply(cptr, ERR_BANNICKCHANGE, channel_name);
       }
       /*
@@ -647,15 +648,17 @@ int set_nick_name(struct Client *cptr, struct Client *sptr, const char *nick,
        * however, allow to do two nick changes immediately after another
        * before limiting the nick flood. -Run
        */
-      if (CurrentTime < cli_nextnick(cptr)) {
+      if (CurrentTime < cli_nextnick(cptr))
+      {
         cli_nextnick(cptr) += 2;
         send_reply(cptr, ERR_NICKTOOFAST, parv[1],
                    cli_nextnick(cptr) - CurrentTime);
         /* Send error message */
         sendcmdto_one(cptr, CMD_NICK, cptr, "%s", cli_name(cptr));
         /* bounce NICK to user */
-        return 0; /* ignore nick change! */
-      } else {
+        return 0;                /* ignore nick change! */
+      }
+      else {
         /* Limit total to 1 change per NICK_DELAY seconds: */
         cli_nextnick(cptr) += NICK_DELAY;
         /* However allow _maximal_ 1 extra consecutive nick change: */
@@ -664,8 +667,8 @@ int set_nick_name(struct Client *cptr, struct Client *sptr, const char *nick,
       }
       /* Invalidate all bans against the user so we check them again */
       for (member = (cli_user(sptr))->channel; member;
-           member = member->next_channel)
-        ClearBanValid(member);
+	   member = member->next_channel)
+	ClearBanValid(member);
     }
     /*
      * Also set 'lastnick' to current time, if changed.
@@ -683,14 +686,16 @@ int set_nick_name(struct Client *cptr, struct Client *sptr, const char *nick,
       add_history(sptr, 1);
       sendcmdto_serv_butone(sptr, CMD_NICK, cptr, "%s %Tu", nick,
                             cli_lastnick(sptr));
-    } else
+    }
+    else
       sendcmdto_one(sptr, CMD_NICK, sptr, ":%s", nick);
 
     if ((cli_name(sptr))[0])
       hRemClient(sptr);
     strcpy(cli_name(sptr), nick);
     hAddClient(sptr);
-  } else {
+  }
+  else {
     /* Local client setting NICK the first time */
     strcpy(cli_name(sptr), nick);
     hAddClient(sptr);
@@ -1244,6 +1249,10 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   int do_set_host = 0;
   size_t opernamelen;
   char *opername = 0;
+  char *remaining_modes = NULL;
+  char **param_scan = NULL;
+  int params_left = 0;
+  int mode_params_left = 0;
   char *account = NULL;
   char* tls_fingerprint = NULL;
 
@@ -1316,7 +1325,32 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
           SetOper(sptr);
           if (IsServer(cptr) && IsSendOperName(cptr)) {
             if (*(p + 1)) {
+              params_left = 0;
+              mode_params_left = 0;
+
+              for (param_scan = p + 1; param_scan < &parv[parc] && *param_scan;
+                   ++param_scan)
+                ++params_left;
+
+              for (remaining_modes = m + 1; *remaining_modes; ++remaining_modes) {
+                switch (*remaining_modes) {
+                case 's':
+                case 'c':
+                case 'h':
+                case 'r':
+                case 'z':
+                  ++mode_params_left;
+                  break;
+                default:
+                  break;
+                }
+              }
+
+              if (params_left <= mode_params_left)
+                break;
+
               opername = *++p;
+
               if (cli_user(sptr)->opername)
                 MyFree(cli_user(sptr)->opername);
               if ((opername[0] == NOOPERNAMECHARACTER) &&
