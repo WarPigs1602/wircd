@@ -59,6 +59,7 @@
 #include "sys.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <arpa/inet.h>
 
@@ -1526,3 +1527,5 @@ blocktype: ALL { $$ = ~0; }
   | WEBIRC { $$ = 1 << BLOCK_WEBIRC; }
   | IPCHECK { $$ = 1 << BLOCK_IPCHECK; }
   ;
+
+%%
