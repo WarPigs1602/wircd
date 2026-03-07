@@ -527,8 +527,18 @@ int ms_sn(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   if (!IsServer(sptr))
     return protocol_violation(cptr, "SN from non-server %s", cli_name(sptr));
 
+  /*
+   * Relay SN as SN first so the target server can apply the change even
+   * when a relaying server cannot (yet) map the target numeric to a user.
+   */
+  if (parc > 3)
+    sendcmdto_serv_butone(sptr, CMD_SN, cptr, "%s %s %s", parv[1], parv[2],
+                          parv[3]);
+  else
+    sendcmdto_serv_butone(sptr, CMD_SN, cptr, "%s %s", parv[1], parv[2]);
+
   if (!(acptr = findNUser(parv[1])))
-    return 0; /* Ignore SN for a user that already QUIT */
+    return 0; /* Relayed already; ignore local apply if user is unknown here. */
 
   nick_parv[0] = cli_name(acptr);
   nick_parv[1] = parv[2];

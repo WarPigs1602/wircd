@@ -895,18 +895,20 @@ void send_umode_out(struct Client *cptr, struct Client *sptr, struct Flags *old,
 
   send_umode(NULL, sptr, old, prop ? SEND_UMODES : SEND_UMODES_BUT_OPER, 0);
 
-  for (i = HighestFd; i >= 0; i--) {
-    if ((acptr = LocalClientArray[i]) && IsServer(acptr) && (acptr != cptr) &&
-        (acptr != sptr) && !IsSendOperName(acptr) && *umodeBuf)
-      sendcmdto_one(sptr, CMD_MODE, acptr, "%s %s", cli_name(sptr), umodeBuf);
+  for (i = HighestFd; i >= 0; i--)
+  {
+    if ((acptr = LocalClientArray[i]) && IsServer(acptr) &&
+        (acptr != cptr) && (acptr != sptr) && !IsSendOperName(acptr) && *umodeBuf)
+        sendcmdto_one(sptr, CMD_MODE, acptr, "%s %s", cli_name(sptr), umodeBuf);
   }
 
   send_umode(NULL, sptr, old, prop ? SEND_UMODES : SEND_UMODES_BUT_OPER, 1);
 
-  for (i = HighestFd; i >= 0; i--) {
-    if ((acptr = LocalClientArray[i]) && IsServer(acptr) && (acptr != cptr) &&
-        (acptr != sptr) && IsSendOperName(acptr) && *umodeBuf)
-      sendcmdto_one(sptr, CMD_MODE, acptr, "%s %s", cli_name(sptr), umodeBuf);
+  for (i = HighestFd; i >= 0; i--)
+  {
+    if ((acptr = LocalClientArray[i]) && IsServer(acptr) &&
+        (acptr != cptr) && (acptr != sptr) && IsSendOperName(acptr) && *umodeBuf)
+        sendcmdto_one(sptr, CMD_MODE, acptr, "%s %s", cli_name(sptr), umodeBuf);
   }
 
   if (cptr && MyUser(cptr))
@@ -1290,8 +1292,7 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   /*
    * parse mode change string(s)
    */
-  for (p = &parv[2]; *p && p < &parv[parc];
-       p++) { /* p is changed in loop too */
+  for (p = &parv[2]; *p && p<&parv[parc]; p++) {       /* p is changed in loop too */
     for (m = *p; *m; m++) {
       switch (*m) {
       case '+':
@@ -1325,49 +1326,20 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
           SetOper(sptr);
           if (IsServer(cptr) && IsSendOperName(cptr)) {
             if (*(p + 1)) {
-              params_left = 0;
-              mode_params_left = 0;
-
-              for (param_scan = p + 1; param_scan < &parv[parc] && *param_scan;
-                   ++param_scan)
-                ++params_left;
-
-              for (remaining_modes = m + 1; *remaining_modes; ++remaining_modes) {
-                switch (*remaining_modes) {
-                case 's':
-                case 'c':
-                case 'h':
-                case 'r':
-                case 'z':
-                  ++mode_params_left;
-                  break;
-                default:
-                  break;
-                }
-              }
-
-              if (params_left <= mode_params_left)
-                break;
-
               opername = *++p;
-
               if (cli_user(sptr)->opername)
                 MyFree(cli_user(sptr)->opername);
-              if ((opername[0] == NOOPERNAMECHARACTER) &&
-                  (opername[1] == '\0')) {
+              if ((opername[0] == NOOPERNAMECHARACTER) && (opername[1] == '\0')) {
                 cli_user(sptr)->opername = NULL;
               } else {
                 opernamelen = strlen(opername);
                 if (opernamelen > ACCOUNTLEN) {
-                  protocol_violation(
-                      cptr,
-                      "Received opername (%s) longer than %d for %s; ignoring.",
-                      opername, ACCOUNTLEN, cli_name(sptr));
+                  protocol_violation(cptr, "Received opername (%s) longer than %d for %s; ignoring.", opername, ACCOUNTLEN, cli_name(sptr));
                   cli_user(sptr)->opername = NULL;
                 } else {
-                  cli_user(sptr)->opername = (char *)MyMalloc(opernamelen + 1);
+                  cli_user(sptr)->opername = (char*) MyMalloc(opernamelen + 1);
                   assert(0 != cli_user(sptr)->opername);
-                  ircd_strncpy(cli_user(sptr)->opername, opername, ACCOUNTLEN);
+                  ircd_strncpy(cli_user(sptr)->opername,opername,ACCOUNTLEN);
                 }
               }
             }
@@ -1375,7 +1347,8 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
         } else {
           ClrFlag(sptr, FLAG_OPER);
           ClrFlag(sptr, FLAG_LOCOP);
-          if (MyConnect(sptr)) {
+          if (MyConnect(sptr))
+          {
             tmpmask = cli_snomask(sptr) & ~SNO_OPER;
             cli_handler(sptr) = CLIENT_HANDLER;
           }
@@ -1471,7 +1444,25 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
         break;
       case 'r':
         if (*(p + 1) && (what == MODE_ADD)) {
-          account = *(++p);
+          /*
+           * Be tolerant of peer-side mode parameter mismatches:
+           * - Some peers include a '-' opername placeholder even when we do
+           *   not expect an opername token.
+           * - Some peers omit that placeholder even when we do expect one.
+           * In both cases, prefer a timestamped account token (<name>:<ts>)
+           * over accidentally taking IP/YXX burst fields as account.
+           */
+          if ((p + 2) < &parv[parc] && *(p + 1) && *(p + 2) &&
+              0 == strcmp(*(p + 1), "-") && strchr(*(p + 2), ':')) {
+            p += 2;
+            account = *p;
+          } else {
+            account = *(++p);
+            if (!strchr(account, ':') && opername &&
+                strcmp(opername, "-") && strchr(opername, ':')) {
+              account = opername;
+            }
+          }
           SetAccount(sptr);
         }
         /* There is no -r */
