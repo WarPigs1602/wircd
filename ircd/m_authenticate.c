@@ -104,15 +104,30 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
+#include <string.h>
 
 /*
  * m_authenticate - client message handler (for unregistered clients)
  */
 int m_authenticate(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
+    size_t payload_len;
+
     if (parc < 2 || *parv[1] == '\0') {
         return need_more_params(sptr, "AUTHENTICATE");
     }
+    if (!CapHas(cli_capab(cptr), CAP_SASL)) {
+        send_reply(sptr, ERR_SASLFAIL);
+        return 0;
+    }
+
+    payload_len = strlen(parv[1]);
+    if (payload_len > 400) {
+        send_reply(sptr, ERR_SASLTOOLONG);
+        send_reply(sptr, ERR_SASLFAIL);
+        return 0;
+    }
+
     if (!cli_auth(cptr)) {
         send_reply(sptr, ERR_SASLFAIL);
         return 0;

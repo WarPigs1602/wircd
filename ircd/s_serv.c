@@ -231,7 +231,7 @@ int server_estab(struct Client *cptr, struct ConfItem *aconf)
 		    cli_hopcount(acptr) + 1, cli_serv(acptr)->timestamp,
 		    protocol_str, Protocol(acptr), NumServCap(acptr),
 		    IsHub(acptr) ? "h" : "", IsService(acptr) ? "s" : "",
-		    IsIPv6(acptr) ? "6" : "", IsSendOperName(cptr) ? "n" : "", cli_info(acptr));
+        IsIPv6(acptr) ? "6" : "", IsSendOperName(acptr) ? "n" : "", cli_info(acptr));
     }
   }
 

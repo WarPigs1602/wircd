@@ -857,11 +857,13 @@ void destroy_auth_request(struct AuthRequest *auth) {
  */
 int auth_set_sasl(struct AuthRequest *auth, const char *crypt) {
   assert(auth != NULL);
-  if (CapHas(cli_active(auth->client), CAP_SASL)) {
-    if (!sendto_iauth(auth->client, "Y %s", crypt)) {
-      return -1;
-    }
+  if (!CapHas(cli_capab(auth->client), CAP_SASL))
+    return -1;
+
+  if (!sendto_iauth(auth->client, "Y %s", crypt)) {
+    return -1;
   }
+
   return 0;
 }
 

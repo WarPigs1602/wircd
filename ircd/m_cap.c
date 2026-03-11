@@ -80,7 +80,8 @@ capab_search(const char *key, const struct capabilities *cap)
    * to be the same length as the capability name, then we've found a
    * match; otherwise, return the difference of the two.
    */
-  return (IsSpace(*key) && !*rb) ? 0 : (ToLower(*key) - ToLower(*rb));
+  return ((IsSpace(*key) || *key == '=') && !*rb) ? 0
+                                                    : (ToLower(*key) - ToLower(*rb));
 }
 
 static struct capabilities *
@@ -117,8 +118,15 @@ find_cap(const char **caplist_p, int *neg_p)
       /* Couldn't find the capability; advance to first whitespace character */
       while (*caplist && !IsSpace(*caplist))
 	caplist++;
-    } else
+    } else {
       caplist += cap->namelen; /* advance to end of capability name */
+
+      /* Skip an optional IRCv3 capability value (cap=value). */
+      if (*caplist == '=') {
+        while (*caplist && !IsSpace(*caplist))
+          caplist++;
+      }
+    }
   }
 
   assert(caplist != *caplist_p || !*caplist); /* we *must* advance */
