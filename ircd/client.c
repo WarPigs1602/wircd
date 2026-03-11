@@ -153,6 +153,7 @@ client_set_privs(struct Client *client, struct ConfItem *oper, int forceOper)
   {
     memset(&privs_global, -1, sizeof(privs_global));
     FlagClr(&privs_global, PRIV_WALK_LCHAN);
+    FlagClr(&privs_global, PRIV_UNLIMIT_QUERY);
     FlagClr(&privs_global, PRIV_SET);
     FlagClr(&privs_global, PRIV_BADCHAN);
     FlagClr(&privs_global, PRIV_LOCAL_BADCHAN);
@@ -256,7 +257,9 @@ static struct {
   P(OPMODE),         P(LOCAL_OPMODE),   P(SET),           P(WHOX),
   P(BADCHAN),        P(LOCAL_BADCHAN),  P(SEE_CHAN),      P(PROPAGATE),
   P(DISPLAY),        P(SEE_OPERS),      P(WIDE_GLINE),    P(LIST_CHAN),
-  P(FORCE_OPMODE),   P(FORCE_LOCAL_OPMODE), P(APASS_OPMODE), P(CHECK),
+  P(FORCE_OPMODE),   P(FORCE_LOCAL_OPMODE), P(APASS_OPMODE),
+  P(CHANSERV),       P(XTRA_OPER),      P(NOIDLE),        P(FREEFORM),
+  P(PARANOID),       P(CHECK),
 #undef P
   { 0, 0 }
 };
