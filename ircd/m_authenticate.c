@@ -113,6 +113,11 @@ int m_authenticate(struct Client* cptr, struct Client* sptr, int parc, char* par
 {
     size_t payload_len;
 
+    /* Keep SASL behind WEBIRC gate so iauth sees a fully initialized client. */
+    if (IsWebircPort(cptr) && !cli_wline(cptr)) {
+        return exit_client(cptr, cptr, &me, "WebIRC authorization required");
+    }
+
     if (parc < 2 || *parv[1] == '\0') {
         return need_more_params(sptr, "AUTHENTICATE");
     }

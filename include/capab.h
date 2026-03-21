@@ -43,7 +43,7 @@
 	_CAP(ECHOMESSAGE, FEAT_CAP_ECHOMESSAGE, 0, "echo-message"), \
 	_CAP(EXTJOIN, FEAT_CAP_EXTJOIN, 0, "extended-join"), \
 	_CAP(INVITENOTIFY, FEAT_CAP_INVITENOTIFY, 0, "invite-notify"), \
-	_CAP(MESSAGETAGS, FEAT_CAP_MESSAGE_TAGS, 0, "message-tags"), \
+	_CAP(MESSAGETAGS, FEAT_CAP_MESSAGETAGS, 0, "message-tags"), \
 	_CAP(SASL, FEAT_CAP_SASL, 0, "sasl")
 
 /** Client capabilities, counting by index. */

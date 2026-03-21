@@ -108,6 +108,10 @@ static int can_send(struct Client *to) {
   return (IsDead(to) || IsMe(to) || -1 == cli_fd(to)) ? 0 : 1;
 }
 
+static int use_message_tags(const char *tags) {
+  return feature_bool(FEAT_CAP_MESSAGETAGS) && tags && *tags == '@';
+}
+
 /** Close the connection with the highest sendq.
  * This should be called when we need to free buffer memory.
  * @param[in] servers_too If non-zero, consider killing servers, too.
@@ -321,6 +325,33 @@ void sendcmdto_one(struct Client *from, const char *cmd, const char *tok,
 
   mb = msgq_make(to, "%:#C %s %v", from, IsServer(to) || IsMe(to) ? tok : cmd,
                  &vd);
+
+  va_end(vd.vd_args);
+
+  send_buffer(to, mb, 0);
+
+  msgq_clean(mb);
+}
+
+void sendcmdto_one_tagged(struct Client *from, const char *cmd,
+                         const char *tok, struct Client *to,
+                         const char *tags, const char *pattern, ...) {
+  struct VarData vd;
+  struct MsgBuf *mb;
+  int tagged;
+
+  to = cli_from(to);
+  tagged = use_message_tags(tags) && !(MyUser(to) && !CapActive(to, CAP_MESSAGETAGS));
+
+  vd.vd_format = pattern;
+  va_start(vd.vd_args, pattern);
+
+  if (tagged)
+    mb = msgq_make(to, "%s %:#C %s %v", tags, from,
+                   IsServer(to) || IsMe(to) ? tok : cmd, &vd);
+  else
+    mb = msgq_make(to, "%:#C %s %v", from,
+                   IsServer(to) || IsMe(to) ? tok : cmd, &vd);
 
   va_end(vd.vd_args);
 
@@ -668,6 +699,48 @@ void sendcmdto_capflag_channel_butserv_butone(
   msgq_clean(mb);
 }
 
+void sendcmdto_capflag_channel_butserv_butone_tagged(
+    struct Client *from, const char *cmd, const char *tok, struct Channel *to,
+    struct Client *one, unsigned int skip, capset_t require, capset_t forbid,
+    const char *tags, const char *pattern, ...) {
+  struct VarData vd;
+  struct MsgBuf *user_mb;
+  struct MsgBuf *tagged_user_mb = 0;
+  struct Membership *member;
+  int tagged = use_message_tags(tags);
+
+  vd.vd_format = pattern;
+
+  va_start(vd.vd_args, pattern);
+  user_mb = msgq_make(0, "%:#C %s %v", from, cmd, &vd);
+  va_end(vd.vd_args);
+
+  if (tagged) {
+    va_start(vd.vd_args, pattern);
+    tagged_user_mb = msgq_make(0, "%s %:#C %s %v", tags, from, cmd, &vd);
+    va_end(vd.vd_args);
+  }
+
+  for (member = to->members; member; member = member->next_member) {
+    if (!MyConnect(member->user) || member->user == one || IsZombie(member) ||
+        (skip & SKIP_DEAF && IsDeaf(member->user)) ||
+        (skip & SKIP_NONOPS && !IsChanOp(member)) ||
+        (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member)) ||
+        (require && !CapHas(cli_active(member->user), require)) ||
+        (forbid && CapHas(cli_active(member->user), forbid)))
+      continue;
+
+    if (tagged && CapActive(member->user, CAP_MESSAGETAGS))
+      send_buffer(member->user, tagged_user_mb, 0);
+    else
+      send_buffer(member->user, user_mb, 0);
+  }
+
+  msgq_clean(user_mb);
+  if (tagged_user_mb)
+    msgq_clean(tagged_user_mb);
+}
+
 /* Send JOIN to all local channel users matching or not matching
  * capability flags.
  * @param[in] from Client joining the channel.
@@ -779,6 +852,41 @@ void sendcmdto_channel_servers_butone(struct Client *from, const char *cmd,
   msgq_clean(serv_mb);
 }
 
+void sendcmdto_channel_servers_butone_tagged(struct Client *from,
+                                            const char *cmd,
+                                            const char *tok,
+                                            struct Channel *to,
+                                            struct Client *one,
+                                            unsigned int skip,
+                                            const char *tags,
+                                            const char *pattern, ...) {
+  struct VarData vd;
+  struct MsgBuf *serv_mb;
+  struct Membership *member;
+  int tagged = use_message_tags(tags);
+
+  vd.vd_format = pattern;
+  va_start(vd.vd_args, pattern);
+  serv_mb = tagged ? msgq_make(&me, "%s %C %s %v", tags, from, tok, &vd)
+                   : msgq_make(&me, "%C %s %v", from, tok, &vd);
+  va_end(vd.vd_args);
+
+  bump_sentalong(one);
+  cli_sentalong(from) = sentalong_marker;
+  for (member = to->members; member; member = member->next_member) {
+    if (MyConnect(member->user) || IsZombie(member) ||
+        cli_fd(cli_from(member->user)) < 0 ||
+        cli_sentalong(member->user) == sentalong_marker ||
+        (skip & SKIP_NONOPS && !IsChanOp(member)) ||
+        (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member)))
+      continue;
+    cli_sentalong(member->user) = sentalong_marker;
+    send_buffer(member->user, serv_mb, 0);
+  }
+
+  msgq_clean(serv_mb);
+}
+
 /** Send a (prefixed) command to all users on this channel, except for
  * \a one and those matching \a skip.
  * @warning \a pattern must not contain %v.
@@ -834,6 +942,65 @@ void sendcmdto_channel_butone(struct Client *from, const char *cmd,
   }
 
   msgq_clean(user_mb);
+  msgq_clean(serv_mb);
+}
+
+void sendcmdto_channel_butone_tagged(struct Client *from, const char *cmd,
+                                    const char *tok, struct Channel *to,
+                                    struct Client *one, unsigned int skip,
+                                    const char *tags, const char *pattern, ...) {
+  struct Membership *member;
+  struct VarData vd;
+  struct MsgBuf *user_mb;
+  struct MsgBuf *tagged_user_mb = 0;
+  struct MsgBuf *serv_mb;
+  int tagged = use_message_tags(tags);
+
+  vd.vd_format = pattern;
+
+  va_start(vd.vd_args, pattern);
+  user_mb = msgq_make(0,
+                      skip & (SKIP_NONOPS | SKIP_NONVOICES) ? "%:#C %s @%v" : "%:#C %s %v",
+                      from, skip & (SKIP_NONOPS | SKIP_NONVOICES) ? MSG_NOTICE : cmd, &vd);
+  va_end(vd.vd_args);
+
+  if (tagged) {
+    va_start(vd.vd_args, pattern);
+    tagged_user_mb = msgq_make(0,
+                      skip & (SKIP_NONOPS | SKIP_NONVOICES) ? "%s %:#C %s @%v" : "%s %:#C %s %v",
+                      tags, from, skip & (SKIP_NONOPS | SKIP_NONVOICES) ? MSG_NOTICE : cmd, &vd);
+    va_end(vd.vd_args);
+  }
+
+  va_start(vd.vd_args, pattern);
+  serv_mb = tagged ? msgq_make(&me, "%s %C %s %v", tags, from, tok, &vd)
+                   : msgq_make(&me, "%C %s %v", from, tok, &vd);
+  va_end(vd.vd_args);
+
+  bump_sentalong(one);
+  for (member = to->members; member; member = member->next_member) {
+    if (IsZombie(member) || (skip & SKIP_DEAF && IsDeaf(member->user)) ||
+        (skip & SKIP_NONOPS && !IsChanOp(member)) ||
+        (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member)) ||
+        (skip & SKIP_BURST && IsBurstOrBurstAck(cli_from(member->user))) ||
+        cli_fd(cli_from(member->user)) < 0 ||
+        cli_sentalong(member->user) == sentalong_marker)
+      continue;
+    cli_sentalong(member->user) = sentalong_marker;
+
+    if (MyConnect(member->user)) {
+      if (tagged && CapActive(member->user, CAP_MESSAGETAGS))
+        send_buffer(member->user, tagged_user_mb, 0);
+      else
+        send_buffer(member->user, user_mb, 0);
+    } else {
+      send_buffer(member->user, serv_mb, 0);
+    }
+  }
+
+  msgq_clean(user_mb);
+  if (tagged_user_mb)
+    msgq_clean(tagged_user_mb);
   msgq_clean(serv_mb);
 }
 
@@ -956,6 +1123,58 @@ void sendcmdto_match_butone(struct Client *from, const char *cmd,
   msgq_clean(serv_mb);
 }
 
+void sendcmdto_match_butone_tagged(struct Client *from, const char *cmd,
+                                  const char *tok, const char *to,
+                                  struct Client *one, unsigned int who,
+                                  const char *tags, const char *pattern, ...) {
+  struct VarData vd;
+  struct Client *cptr;
+  struct MsgBuf *user_mb;
+  struct MsgBuf *tagged_user_mb = 0;
+  struct MsgBuf *serv_mb;
+  int tagged = use_message_tags(tags);
+
+  vd.vd_format = pattern;
+
+  va_start(vd.vd_args, pattern);
+  user_mb = msgq_make(0, "%:#C %s %v", from, cmd, &vd);
+  va_end(vd.vd_args);
+
+  if (tagged) {
+    va_start(vd.vd_args, pattern);
+    tagged_user_mb = msgq_make(0, "%s %:#C %s %v", tags, from, cmd, &vd);
+    va_end(vd.vd_args);
+  }
+
+  va_start(vd.vd_args, pattern);
+  serv_mb = tagged ? msgq_make(&me, "%s %C %s %v", tags, from, tok, &vd)
+                   : msgq_make(&me, "%C %s %v", from, tok, &vd);
+  va_end(vd.vd_args);
+
+  bump_sentalong(one);
+  for (cptr = GlobalClientList; cptr; cptr = cli_next(cptr)) {
+    if (!IsRegistered(cptr) || IsServer(cptr) || cli_fd(cli_from(cptr)) < 0 ||
+        cli_sentalong(cptr) == sentalong_marker ||
+        !match_it(from, cptr, to, who))
+      continue;
+    cli_sentalong(cptr) = sentalong_marker;
+
+    if (MyConnect(cptr)) {
+      if (tagged && CapActive(cptr, CAP_MESSAGETAGS))
+        send_buffer(cptr, tagged_user_mb, 0);
+      else
+        send_buffer(cptr, user_mb, 0);
+    } else {
+      send_buffer(cptr, serv_mb, 0);
+    }
+  }
+
+  msgq_clean(user_mb);
+  if (tagged_user_mb)
+    msgq_clean(tagged_user_mb);
+  msgq_clean(serv_mb);
+}
+
 /** Send a server notice to all users subscribing to the indicated \a
  * mask except for \a one.
  * @param[in] one Client direction to skip (or NULL).
@@ -1027,80 +1246,4 @@ void vsendto_opmask_butone(struct Client *one, unsigned int mask,
       send_buffer(opslist->value.cptr, mb, 0);
 
   msgq_clean(mb);
-}
-
-/** Send tagmsg to all users matching the message-tags capability flag..
- * @param[in] from Client originating the command.
- * @param[in] to Destination channel.
- * @param[in] one Client direction to skip (or NULL).
- * @param[in] pattern Format string for command arguments.
- */
-void sendcmdto_tagmsg_butone(struct Client *from, struct Channel *to,
-                             struct Client *one, const char *pattern, ...) {
-  struct Membership *member;
-  struct VarData vd;
-  struct MsgBuf *user_mb;
-  struct MsgBuf *serv_mb;
-
-  vd.vd_format = pattern;
-
-  /* Build buffer to send to users */
-  va_start(vd.vd_args, pattern);
-  user_mb = msgq_make(0, "%v %:#C TAGMSG %H", &vd, from, to);
-  va_end(vd.vd_args);
-
-  /* Build buffer to send to servers */
-  va_start(vd.vd_args, pattern);
-  serv_mb = msgq_make(&me, "%v %:#C TAGMSG %H", &vd, from, to);
-  va_end(vd.vd_args);
-
-  bump_sentalong(one);
-  if (to) {
-    for (member = to->members; member; member = member->next_member) {
-      if (IsZombie(member) || cli_fd(cli_from(member->user)) < 0 ||
-          cli_sentalong(member->user) == sentalong_marker)
-        continue;
-      cli_sentalong(member->user) = sentalong_marker;
-
-      if (MyConnect(member->user)) { /* pick right buffer to send */
-        if (CapHas(cli_active(member->user), CAP_MESSAGETAGS))
-          send_buffer(member->user, user_mb, 0);
-      } else
-        send_buffer(member->user, serv_mb, 0);
-    }
-  }
-  msgq_clean(user_mb);
-  msgq_clean(serv_mb);
-}
-
-/** Send tagmsg to user that matching the message-tags capability flag
- * @param[in] from Client originating the command.
- * @param[in] to Destination channel.
- * @param[in] one Client direction to skip (or NULL).
- * @param[in] pattern Format string for command arguments.
- */
-void sendcmdto_tagmsg_priv_butone(struct Client *from,
-                                          struct Client *to, struct Client *one,
-                                          const char *pattern, ...) {
-  struct VarData vd;
-  vd.vd_format = pattern;
-  if (MyConnect(to)) {
-    if (CapHas(cli_active(to), CAP_MESSAGETAGS)) {
-      va_start(vd.vd_args, pattern);
-      sendrawto_one(to, "%v %:#C TAGMSG %s", &vd, from, cli_name(to));
-      va_end(vd.vd_args);
-    }
-  } else {
-    struct MsgBuf *serv_mb;
-    struct DLink *lp;
-    va_start(vd.vd_args, pattern);
-    serv_mb = msgq_make(&me, "%v %:#C TAGMSG %s", &vd, from, cli_name(to));
-    va_end(vd.vd_args);
-    for (lp = cli_serv(&me)->down; lp; lp = lp->next) {
-      if (one && lp->value.cptr == cli_from(one))
-        continue;
-      send_buffer(lp->value.cptr, serv_mb, 0);
-    }
-    msgq_clean(serv_mb);
-  }
 }

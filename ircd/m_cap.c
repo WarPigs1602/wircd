@@ -37,6 +37,7 @@
 #include "numeric.h"
 #include "send.h"
 #include "s_auth.h"
+#include "s_misc.h"
 #include "s_user.h"
 
 #include <stdlib.h>
@@ -365,6 +366,9 @@ m_cap(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
   char *subcmd, *caplist = 0;
   struct subcmd *cmd;
+
+  if (IsWebircPort(cptr) && !cli_wline(cptr))
+    return exit_client(cptr, cptr, &me, "WebIRC authorization required");
 
   if (parc < 2) /* a subcommand is required */
     return 0;

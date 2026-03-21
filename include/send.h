@@ -43,6 +43,11 @@ extern void sendcmdto_one(struct Client *from, const char *cmd,
 			  const char *tok, struct Client *to,
 			  const char *pattern, ...);
 
+/* Send a command to one client, optionally prefixed with message tags */
+extern void sendcmdto_one_tagged(struct Client *from, const char *cmd,
+				 const char *tok, struct Client *to,
+				 const char *tags, const char *pattern, ...);
+
 /* Same as above, except it puts the message on the priority queue */
 extern void sendcmdto_prio_one(struct Client *from, const char *cmd,
 			       const char *tok, struct Client *to,
@@ -89,6 +94,18 @@ void sendcmdto_capflag_channel_butserv_butone(struct Client *from, const char *c
 					      capset_t require, capset_t forbid,
 					      const char *pattern, ...);
 
+/* Send command to all channel users on this server with message tags and capability filtering */
+void sendcmdto_capflag_channel_butserv_butone_tagged(struct Client *from,
+						     const char *cmd,
+						     const char *tok,
+						     struct Channel *to,
+						     struct Client *one,
+						     unsigned int skip,
+						     capset_t require,
+						     capset_t forbid,
+						     const char *tags,
+						     const char *pattern, ...);
+
 /* Send command to all channel users on this server */
 extern void sendcmdto_channel_butserv_butone(struct Client *from,
 					     const char *cmd,
@@ -107,11 +124,31 @@ extern void sendcmdto_channel_servers_butone(struct Client *from,
                                              unsigned int skip,
                                              const char *pattern, ...);
 
+/* Send command with message tags to all servers interested in a channel */
+extern void sendcmdto_channel_servers_butone_tagged(struct Client *from,
+						    const char *cmd,
+						    const char *tok,
+						    struct Channel *to,
+						    struct Client *one,
+						    unsigned int skip,
+						    const char *tags,
+						    const char *pattern, ...);
+
 /* Send command to all interested channel users */
 extern void sendcmdto_channel_butone(struct Client *from, const char *cmd,
 				     const char *tok, struct Channel *to,
 				     struct Client *one, unsigned int skip,
 				     const char *pattern, ...);
+
+/* Send command to all interested channel users, optionally with message tags */
+extern void sendcmdto_channel_butone_tagged(struct Client *from,
+					    const char *cmd,
+					    const char *tok,
+					    struct Channel *to,
+					    struct Client *one,
+					    unsigned int skip,
+					    const char *tags,
+					    const char *pattern, ...);
 
 
 /* Send JOIN to all local channel users matching or not matching capability flags */
@@ -146,6 +183,16 @@ extern void sendcmdto_match_butone(struct Client *from, const char *cmd,
 				   struct Client *one, unsigned int who,
 				   const char *pattern, ...);
 
+/* Send command to all matching clients, optionally with message tags */
+extern void sendcmdto_match_butone_tagged(struct Client *from,
+					  const char *cmd,
+					  const char *tok,
+					  const char *to,
+					  struct Client *one,
+					  unsigned int who,
+					  const char *tags,
+					  const char *pattern, ...);
+
 /* Send server notice to opers but one--one can be NULL */
 extern void sendto_opmask_butone(struct Client *one, unsigned int mask,
 				 const char *pattern, ...);
@@ -158,15 +205,6 @@ extern void sendto_opmask_butone_ratelimited(struct Client *one,
 /* Same as above, but with variable argument list */
 extern void vsendto_opmask_butone(struct Client *one, unsigned int mask,
 				  const char *pattern, va_list vl);
-
-
-/* Send tagmsg to all users matching the message-tags capability flag */
-void sendcmdto_tagmsg_butone(struct Client *from, struct Channel *to,
-					      struct Client *one, const char *pattern, ...);
-
-/* Send tagmsg to target user, if it has matching a message-tags capablility flag */
-void sendcmdto_tagmsg_priv_butone(struct Client *from, struct Client *to,
-					      struct Client *one, const char *pattern, ...);
 
 
 #endif /* INCLUDED_send_h */

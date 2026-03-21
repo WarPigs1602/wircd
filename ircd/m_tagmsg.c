@@ -90,97 +90,38 @@
 #include "ircd_chattr.h"
 #include "ircd_features.h"
 #include "ircd_log.h"
+#include "ircd_messagetags.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
 #include "msg.h"
 #include "numeric.h"
 #include "numnicks.h"
-#include "s_debug.h"
 #include "s_user.h"
 #include "send.h"
-#include "sys.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
-#include <stdio.h>
-#include <string.h>
-
-static int valid_tag_key_char(int c)
-{
-  return ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-          (c >= '0' && c <= '9') || c == '-' || c == '/' || c == '+' || c == '.');
-}
-
-static int validate_and_normalize_tags(char *tags)
-{
-  /* tags is modified in-place to decode escapes */
-  if (!tags || *tags != '@')
-    return 0; /* no tag prefix */
-
-  char *p = tags + 1; /* skip leading '@' */
-  int tag_count = 0;
-  while (*p) {
-    if (tag_count++ >= feature_int(FEAT_TAGMSG_COUNT_MAX))
-      return -1;
-    char *key_start = p;
-    while (*p && *p != '=' && *p != ';') {
-      if (!valid_tag_key_char((unsigned char)*p))
-        return -1;
-      if ((p - key_start) >= feature_int(FEAT_TAGMSG_KEY_MAX))
-        return -1;
-      p++;
-    }
-    if (*p == '=') {
-      p++; /* value start */
-      char *val_start = p;
-      char *write = p; /* decode escape sequences */
-      while (*p && *p != ';') {
-        if (*p == '\\') { /* escape */
-          p++;
-          if (*p == ':' || *p == ';' || *p == ' ' || *p == '\\') {
-            *write++ = *p++;
-          } else if (*p == 'n') { /* common unofficial mapping */
-            *write++ = '\n'; p++; 
-          } else {
-            /* unknown escape, keep char if present */
-            if (*p)
-              *write++ = *p++;
-          }
-        } else {
-          *write++ = *p++;
-        }
-        if ((write - val_start) >= feature_int(FEAT_TAGMSG_VALUE_MAX))
-          return -1;
-      }
-      *write = '\0';
-      p = (*p == ';') ? p + 1 : p; /* skip separator */
-    } else if (*p == ';') {
-      /* key-only tag */
-      p++; /* move past ';' */
-    } else {
-      /* end of string after a key-only tag */
-      break;
-    }
-  }
-  return 0;
-}
 
 /* Local TAGMSG handler: parv[1] = tag string, parv[2] = target */
 int m_tagmsg(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-  if (parc < 3 || EmptyString(parv[1]) || EmptyString(parv[2]))
+  char *tags;
+  char *target;
+  int too_long;
+  struct Channel *chptr;
+  struct Client *acptr;
+
+  if (!ircd_parse_message_tags(sptr, parc, parv, &tags, &target, 0, 1, 0))
     return need_more_params(sptr, "TAGMSG");
-  if (!feature_bool(FEAT_CAP_MESSAGE_TAGS) || !CapHas(cli_active(sptr), CAP_MESSAGETAGS))
-    return 0; /* capability not negotiated */
 
-  /* use strnlen since local my_strnlen helper is private to ircd_snprintf.c */
-  if (strnlen(parv[1], feature_int(FEAT_TAGMSG_LINE_TAGS_MAX)+1) > feature_int(FEAT_TAGMSG_LINE_TAGS_MAX))
-    return 0; /* silently drop oversized tag block */
-  if (validate_and_normalize_tags(parv[1]) != 0)
-    return 0; /* invalid tag syntax */
+  if (!feature_bool(FEAT_CAP_MESSAGETAGS) || !CapActive(sptr, CAP_MESSAGETAGS))
+    return 0;
 
-  struct Channel *chan = FindChannel(parv[2]);
-  struct Client *user = FindUser(parv[2]);
-  
+  if (!ircd_sanitize_message_tags(&tags, 1, 1, 1, &too_long)) {
+    if (too_long)
+      return send_reply(sptr, ERR_INPUTTOOLONG);
+    return 0;
+  }
+
   /* Apply per-client TAGMSG rate limiting for local users */
   if (MyUser(sptr)) {
     time_t now = CurrentTime;
@@ -201,39 +142,66 @@ int m_tagmsg(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
       cli_tagmsg_count(sptr) = 1;
     }
   }
-  if (!chan && !user)
-    return 0; /* unknown target */
+  if (IsChannelName(target)) {
+    if (!(chptr = FindChannel(target)))
+      return 0;
 
-  if (chan) {
-    /* Permissions as PRIVMSG/NOTICE */
-    if (!client_can_send_to_channel(sptr, chan, 1))
+    if (!client_can_send_to_channel(sptr, chptr, 0))
       return 0;
-    /* TAGMSG exempt from target-change limits (already rate-limited separately) */
-    sendcmdto_tagmsg_butone(sptr, chan, sptr, parv[1]);
-  }
-  if (user) {
-    /* TAGMSG exempt from target-change limits (already rate-limited separately) */
-    if (is_silenced(sptr, user))
+
+    sendcmdto_capflag_channel_butserv_butone_tagged(sptr, CMD_TAGMSG, chptr,
+                                                    cptr, 0,
+                                                    CAP_MESSAGETAGS, 0,
+                                                    tags, "%H", chptr);
+    sendcmdto_channel_servers_butone_tagged(sptr, CMD_TAGMSG, chptr, cptr, 0,
+                                            tags, "%H", chptr);
+  } else {
+    if (!(acptr = FindUser(target)))
       return 0;
-    sendcmdto_tagmsg_priv_butone(sptr, user, sptr, parv[1]);
+
+    if (is_silenced(sptr, acptr))
+      return 0;
+
+    if (!MyConnect(acptr) || CapActive(acptr, CAP_MESSAGETAGS))
+      sendcmdto_one_tagged(sptr, CMD_TAGMSG, acptr, tags, "%C", acptr);
   }
+
   return 0;
 }
 
 /* Server-originated forwarding of TAGMSG: parv[1] = tags, parv[2] = target */
 int ms_tagmsg(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-  if (parc < 3)
-    return need_more_params(sptr, "TAGMSG");
-  if (!feature_bool(FEAT_CAP_MESSAGE_TAGS))
+  struct Channel *chptr;
+  struct Client *acptr;
+  char *tags;
+  char *target;
+  int too_long;
+
+  if (!ircd_parse_message_tags(sptr, parc, parv, &tags, &target, 0, 1, 0))
     return 0;
-  /* We trust upstream server validation; optionally could re-validate. */
-  struct Channel *chan = FindChannel(parv[2]);
-  struct Client *user = FindUser(parv[2]);
-  if (chan)
-    sendcmdto_tagmsg_butone(sptr, chan, sptr, parv[1]);
-  if (user)
-    sendcmdto_tagmsg_priv_butone(sptr, user, sptr, parv[1]);
+
+  if (!ircd_sanitize_message_tags(&tags, 0, 0, 1, &too_long))
+    return 0;
+
+  if (!feature_bool(FEAT_CAP_MESSAGETAGS))
+    return 0;
+
+  if (IsChannelName(target)) {
+    if ((chptr = FindChannel(target))) {
+      sendcmdto_capflag_channel_butserv_butone_tagged(sptr, CMD_TAGMSG, chptr,
+                                                      cptr, 0,
+                                                      CAP_MESSAGETAGS, 0,
+                                                      tags, "%H", chptr);
+      sendcmdto_channel_servers_butone_tagged(sptr, CMD_TAGMSG, chptr, cptr, 0,
+                                              tags, "%H", chptr);
+    }
+  } else {
+    if ((acptr = findNUser(target)))
+      if (!MyConnect(acptr) || CapActive(acptr, CAP_MESSAGETAGS))
+        sendcmdto_one_tagged(sptr, CMD_TAGMSG, acptr, tags, "%C", acptr);
+  }
+
   return 0;
 }
 

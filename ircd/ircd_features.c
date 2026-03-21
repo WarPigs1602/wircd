@@ -385,16 +385,17 @@ static struct FeatureDesc {
     F_B(CAP_ECHOMESSAGE, 0, 1, 0),
     F_B(CAP_EXTJOIN, 0, 1, 0),
     F_B(CAP_INVITENOTIFY, 0, 1, 0),
-    F_B(CAP_MESSAGE_TAGS, 0, 1, 0),
+    F_B(CAP_MESSAGETAGS, 0, 1, 0),
     F_B(CAP_SASL, 0, 1, 0),
+    F_S(CLIENTTAGDENY, FEAT_CASE | FEAT_NULL, "", 0),
 
     /* message-tags parameters */
     F_I(TAGMSG_LINE_TAGS_MAX, 0, 1024, 0),
     F_I(TAGMSG_KEY_MAX, 0, 64, 0),
     F_I(TAGMSG_VALUE_MAX, 0, 256, 0),
     F_I(TAGMSG_COUNT_MAX, 0, 64, 0),
-    F_I(TAGMSG_MAX_PER_WINDOW, 0, 20, 0),
-    F_I(TAGMSG_WINDOW_SECONDS, 0, 10, 0),
+    F_I(TAGMSG_MAX_PER_WINDOW, 0, 10, 0),
+    F_I(TAGMSG_WINDOW_SECONDS, 0, 1, 0),
 
     /* Cloak */
     F_S(HOST_HIDING_PREFIX, 0, "cloak", 0),

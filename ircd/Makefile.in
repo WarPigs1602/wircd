@@ -110,6 +110,7 @@ IRCD_SRC = \
 	ircd_features.c \
 	ircd_lexer.c \
 	ircd_log.c \
+	ircd_messagetags.c \
 	ircd_relay.c \
 	ircd_reply.c \
 	ircd_res.c \
