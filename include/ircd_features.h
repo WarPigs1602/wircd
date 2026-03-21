@@ -126,6 +126,7 @@ enum Feature {
   FEAT_CAP_INVITENOTIFY,
   FEAT_CAP_MESSAGETAGS,
   FEAT_CAP_SASL,
+  FEAT_CAP_UHNAMES,
   FEAT_CLIENTTAGDENY,
 
   /* message-tags paramenters */

@@ -387,6 +387,7 @@ static struct FeatureDesc {
     F_B(CAP_INVITENOTIFY, 0, 1, 0),
     F_B(CAP_MESSAGETAGS, 0, 1, 0),
     F_B(CAP_SASL, 0, 1, 0),
+    F_B(CAP_UHNAMES, 0, 1, 0),
     F_S(CLIENTTAGDENY, FEAT_CASE | FEAT_NULL, "", 0),
 
     /* message-tags parameters */
