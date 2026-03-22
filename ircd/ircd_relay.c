@@ -133,7 +133,7 @@ void relay_channel_message(struct Client* sptr, const char* name, const char* te
   RevealDelayedJoinIfNeeded(sptr, chptr);
   sendcmdto_channel_butone_tagged(sptr, CMD_PRIVATE, chptr, sptr,
 				  SKIP_DEAF | SKIP_BURST, tags, "%H :%s", chptr, text);
-  history_add_message(chptr, sptr, "PRIVMSG", text);
+  history_add_message(chptr, sptr, "PRIVMSG", text, tags);
 
   if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
     sendcmdto_one_tagged(sptr, CMD_PRIVATE, sptr, tags, "%H :%s", chptr, text);
@@ -191,7 +191,7 @@ void relay_channel_notice(struct Client* sptr, const char* name, const char* tex
   RevealDelayedJoinIfNeeded(sptr, chptr);
   sendcmdto_channel_butone_tagged(sptr, CMD_NOTICE, chptr, sptr,
 				  SKIP_DEAF | SKIP_BURST, tags, "%H :%s", chptr, text);
-  history_add_message(chptr, sptr, "NOTICE", text);
+  history_add_message(chptr, sptr, "NOTICE", text, tags);
 
   if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
     sendcmdto_one_tagged(sptr, CMD_NOTICE, sptr, tags, "%H :%s", chptr, text);
@@ -222,7 +222,7 @@ void server_relay_channel_message(struct Client* sptr, const char* name, const c
   if (client_can_send_to_channel(sptr, chptr, 1) || IsChannelService(sptr)) {
     sendcmdto_channel_butone_tagged(sptr, CMD_PRIVATE, chptr, cli_from(sptr),
 				    SKIP_DEAF | SKIP_BURST, tags, "%H :%s", chptr, text);
-    history_add_message(chptr, sptr, "PRIVMSG", text);
+    history_add_message(chptr, sptr, "PRIVMSG", text, tags);
   }
   else
     send_reply(sptr, ERR_CANNOTSENDTOCHAN, chptr->chname);
@@ -251,7 +251,7 @@ void server_relay_channel_notice(struct Client* sptr, const char* name, const ch
   if (client_can_send_to_channel(sptr, chptr, 1) || IsChannelService(sptr)) {
     sendcmdto_channel_butone_tagged(sptr, CMD_NOTICE, chptr, cli_from(sptr),
 				    SKIP_DEAF | SKIP_BURST, tags, "%H :%s", chptr, text);
-    history_add_message(chptr, sptr, "NOTICE", text);
+    history_add_message(chptr, sptr, "NOTICE", text, tags);
   }
 }
 

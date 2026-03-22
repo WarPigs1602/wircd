@@ -40,6 +40,7 @@ struct Channel;
 /** History message entry */
 struct HistoryMessage {
   time_t timestamp;                    /**< When message was sent */
+  char *time_tag;                      /**< Original server-time value */
   char *prefix;                        /**< Nick!user@host of sender */
   char *command;                       /**< Command (PRIVMSG, NOTICE, etc) */
   char *message;                       /**< Message content */
@@ -70,7 +71,8 @@ extern void history_init(void);
 extern void history_add_message(struct Channel *chptr,
                                  struct Client *from,
                                  const char *command,
-                                 const char *message);
+                                 const char *message,
+                                 const char *tags);
 
 /** Send channel history to a client
  * @param[in] cptr Client to send history to

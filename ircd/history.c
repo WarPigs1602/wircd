@@ -50,6 +50,45 @@
 /** Global list of channel histories */
 static struct History *global_history = NULL;
 
+static int
+extract_server_time_tag(const char *tags, char *out, size_t outsz)
+{
+  const char *scan;
+
+  if (!tags || *tags != '@' || !out || outsz == 0)
+    return 0;
+
+  scan = tags + 1;
+  while (*scan) {
+    const char *key = scan;
+    const char *eq;
+    const char *end;
+    size_t len;
+
+    while (*scan && *scan != ';')
+      ++scan;
+    end = scan;
+
+    eq = memchr(key, '=', (size_t)(end - key));
+    if (eq && (eq - key) == 4 && 0 == memcmp(key, "time", 4)) {
+      ++eq;
+      len = (size_t)(end - eq);
+      if (len == 0)
+        return 0;
+      if (len >= outsz)
+        len = outsz - 1;
+      memcpy(out, eq, len);
+      out[len] = '\0';
+      return 1;
+    }
+
+    if (*scan == ';')
+      ++scan;
+  }
+
+  return 0;
+}
+
 /** Find history for a channel
  * @param[in] chptr Channel to find history for
  * @return History structure, or NULL if not found
@@ -107,11 +146,14 @@ void
 history_add_message(struct Channel *chptr,
                     struct Client *from,
                     const char *command,
-                    const char *message)
+                    const char *message,
+                    const char *tags)
 {
   struct History *hist;
   struct HistoryMessage *msg, *last;
   char prefix_buf[512];
+  char time_tag_buf[64];
+  struct tm *tm;
   
   if (!chptr || !from || !command || !message)
     return;
@@ -136,11 +178,21 @@ history_add_message(struct Channel *chptr,
                 cli_user(from) ? cli_user(from)->host : "unknown");
   
   msg->timestamp = CurrentTime;
+  if (!extract_server_time_tag(tags, time_tag_buf, sizeof(time_tag_buf))) {
+    tm = gmtime(&msg->timestamp);
+    if (tm)
+      strftime(time_tag_buf, sizeof(time_tag_buf), "%Y-%m-%dT%H:%M:%S.000Z", tm);
+    else
+      strcpy(time_tag_buf, "1970-01-01T00:00:00.000Z");
+  }
+
+  msg->time_tag = (char *)MyMalloc(strlen(time_tag_buf) + 1);
   msg->prefix = (char *)MyMalloc(strlen(prefix_buf) + 1);
   msg->command = (char *)MyMalloc(strlen(command) + 1);
   msg->message = (char *)MyMalloc(strlen(message) + 1);
   
-  if (!msg->prefix || !msg->command || !msg->message) {
+  if (!msg->time_tag || !msg->prefix || !msg->command || !msg->message) {
+    if (msg->time_tag) MyFree(msg->time_tag);
     if (msg->prefix) MyFree(msg->prefix);
     if (msg->command) MyFree(msg->command);
     if (msg->message) MyFree(msg->message);
@@ -148,6 +200,7 @@ history_add_message(struct Channel *chptr,
     return;
   }
   
+  strcpy(msg->time_tag, time_tag_buf);
   strcpy(msg->prefix, prefix_buf);
   strcpy(msg->command, command);
   strcpy(msg->message, message);
@@ -171,6 +224,7 @@ history_add_message(struct Channel *chptr,
   if (hist->message_count > HISTORY_MAX_MESSAGES) {
     struct HistoryMessage *old = hist->messages;
     hist->messages = old->next;
+    MyFree(old->time_tag);
     MyFree(old->prefix);
     MyFree(old->command);
     MyFree(old->message);
@@ -283,17 +337,9 @@ history_send_range(struct Client *cptr,
 
       /* Local client - can send tags directly */
       if (batch_ref && has_time) {
-        char time_tag[64];
         char tagbuf[128];
-        struct tm *tm = gmtime(&msg->timestamp);
-        
-        if (tm)
-          strftime(time_tag, sizeof(time_tag), "%Y-%m-%dT%H:%M:%S.000Z", tm);
-        else
-          strcpy(time_tag, "1970-01-01T00:00:00.000Z");
-
         ircd_snprintf(0, tagbuf, sizeof(tagbuf), "@time=%s;batch=%s",
-                      time_tag, batch_ref);
+                      msg->time_tag, batch_ref);
         sendrawto_one_tagged(cptr, tagbuf, ":%s %s %s :%s", msg->prefix,
                              msg->command, send_target, msg->message);
       } else if (batch_ref) {
@@ -303,16 +349,8 @@ history_send_range(struct Client *cptr,
         sendrawto_one_tagged(cptr, tagbuf, ":%s %s %s :%s", msg->prefix,
                              msg->command, send_target, msg->message);
       } else if (has_time) {
-        char time_tag[64];
         char tagbuf[96];
-        struct tm *tm = gmtime(&msg->timestamp);
-        
-        if (tm)
-          strftime(time_tag, sizeof(time_tag), "%Y-%m-%dT%H:%M:%S.000Z", tm);
-        else
-          strcpy(time_tag, "1970-01-01T00:00:00.000Z");
-
-        ircd_snprintf(0, tagbuf, sizeof(tagbuf), "@time=%s", time_tag);
+        ircd_snprintf(0, tagbuf, sizeof(tagbuf), "@time=%s", msg->time_tag);
         sendrawto_one_tagged(cptr, tagbuf, ":%s %s %s :%s", msg->prefix,
                              msg->command, send_target, msg->message);
       } else {
@@ -325,19 +363,12 @@ history_send_range(struct Client *cptr,
        * Resolve nick from stored prefix and send real PRIVMSG/NOTICE from that
        * client so receivers render native channel lines. */
       char nick_buf[BUFSIZE];
-      char time_tag[64];
       char tagbuf[96];
       const char *bang;
       size_t nick_len;
       struct Client *from_client;
-      struct tm *tm = gmtime(&msg->timestamp);
 
-      if (tm)
-        strftime(time_tag, sizeof(time_tag), "%Y-%m-%dT%H:%M:%S.000Z", tm);
-      else
-        strcpy(time_tag, "1970-01-01T00:00:00.000Z");
-
-      ircd_snprintf(0, tagbuf, sizeof(tagbuf), "@time=%s", time_tag);
+      ircd_snprintf(0, tagbuf, sizeof(tagbuf), "@time=%s", msg->time_tag);
 
       bang = strchr(msg->prefix, '!');
       nick_len = bang ? (size_t)(bang - msg->prefix) : strlen(msg->prefix);
@@ -359,7 +390,7 @@ history_send_range(struct Client *cptr,
         char fallback_buf[512];
 
         ircd_snprintf(0, fallback_buf, sizeof(fallback_buf), "[%s] <%s> %s",
-                      time_tag, msg->prefix, msg->message);
+                      msg->time_tag, msg->prefix, msg->message);
         sendcmdto_one_tagged(&me, CMD_PRIVATE, cptr, tagbuf,
                              "%s :%s", send_target, fallback_buf);
       }
@@ -402,6 +433,7 @@ history_clear_channel(struct Channel *chptr)
   /* Free all messages */
   for (msg = hist->messages; msg; msg = next) {
     next = msg->next;
+    MyFree(msg->time_tag);
     MyFree(msg->prefix);
     MyFree(msg->command);
     MyFree(msg->message);
