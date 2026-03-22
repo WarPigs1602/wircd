@@ -1333,6 +1333,13 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   char *opername = 0;
   char* account = NULL;
   char *tls_fingerprint = NULL;
+  int had_account = IsAccount(sptr);
+  char old_account[ACCOUNTLEN + 1];
+  int account_changed = 0;
+
+  old_account[0] = '\0';
+  if (had_account)
+    ircd_strncpy(old_account, cli_user(sptr)->account, ACCOUNTLEN + 1);
 
   hostmask = password = NULL;
   what = MODE_ADD;
@@ -1550,9 +1557,23 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
         if ((what == MODE_ADD) && *(p + 1))
         {
           account = *(++p);
-          SetAccount(sptr);
+          if (account[0] == '*' && account[1] == '\0')
+          {
+            ClrFlag(sptr, FLAG_ACCOUNT);
+            cli_user(sptr)->account[0] = '\0';
+            cli_user(sptr)->acc_create = 0;
+            cli_user(sptr)->acc_id = 0;
+          }
+          else
+            SetAccount(sptr);
         }
-        /* There is no -r */
+        else if ((what == MODE_DEL) && IsServer(cptr))
+        {
+          ClrFlag(sptr, FLAG_ACCOUNT);
+          cli_user(sptr)->account[0] = '\0';
+          cli_user(sptr)->acc_create = 0;
+          cli_user(sptr)->acc_id = 0;
+        }
         break;
       case 'z':
         if (what == MODE_ADD)
@@ -1580,7 +1601,12 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
     if (!FlagHas(&setflags, FLAG_LOCOP) && IsLocOp(sptr))
       ClearLocOp(sptr);
     if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(sptr))
+    {
       ClrFlag(sptr, FLAG_ACCOUNT);
+      cli_user(sptr)->account[0] = '\0';
+      cli_user(sptr)->acc_create = 0;
+      cli_user(sptr)->acc_id = 0;
+    }
     if (!FlagHas(&setflags, FLAG_TLS) && IsTLS(sptr))
       ClrFlag(sptr, FLAG_TLS);
     else if (FlagHas(&setflags, FLAG_TLS) && !IsTLS(sptr))
@@ -1642,10 +1668,16 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
     else
       set_snomask(sptr, 0, SNO_SET);
   }
-  if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(sptr))
+  if (account && IsAccount(sptr) &&
+      !(account[0] == '*' && account[1] == '\0'))
   {
     int len = ACCOUNTLEN;
     char *pts, *ts;
+
+    /* Reset optional metadata unless this mode parameter carries new values. */
+    cli_user(sptr)->acc_create = 0;
+    cli_user(sptr)->acc_id = 0;
+
     if ((ts = strchr(account, ':')))
     {
       len = (ts++) - account;
@@ -1659,6 +1691,11 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
     }
     ircd_strncpy(cli_user(sptr)->account, account, len);
   }
+  if (had_account != IsAccount(sptr))
+    account_changed = 1;
+  else if (had_account && IsAccount(sptr) &&
+           0 != strcmp(old_account, cli_user(sptr)->account))
+    account_changed = 1;
   if (!FlagHas(&setflags, FLAG_HIDDENHOST) && do_host_hiding &&
       allow_modes != ALLOWMODES_DEFAULT)
     hide_hostmask(sptr, FLAG_HIDDENHOST);
@@ -1716,6 +1753,8 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
     assert(UserStats.opers <= UserStats.clients + UserStats.unknowns);
     assert(UserStats.inv_clients <= UserStats.clients + UserStats.unknowns);
     send_umode_out(cptr, sptr, &setflags, prop);
+    if (account_changed)
+      send_account_notify(sptr, IsAccount(sptr) ? cli_user(sptr)->account : "*");
   }
 
   return 0;

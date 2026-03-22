@@ -851,6 +851,24 @@ struct Message msgtab[] = {
      NULL,
      /* UNREG, CLIENT, SERVER, OPER, SERVICE */
      {m_authenticate, mr_authenticate, m_ignore, mr_authenticate, m_ignore}},
+    {MSG_BATCH_IRC,
+     TOK_BATCH,
+     0,
+     MAXPARA,
+     MFLG_FAST,
+     0,
+     NULL,
+     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+     {m_unregistered, m_batch, ms_batch, m_batch, m_ignore}},
+    {MSG_HISTORY,
+     TOK_HISTORY,
+     0,
+     MAXPARA,
+     MFLG_FAST,
+     0,
+     NULL,
+     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+     {m_unregistered, m_history, m_ignore, mo_history, m_ignore}},
     {MSG_TAGMSG,
      TOK_TAGMSG,
      0,
@@ -886,7 +904,8 @@ static int command_supports_message_tags(struct Message *mptr) {
   return mptr && mptr->cmd &&
          (0 == ircd_strcmp(mptr->cmd, MSG_PRIVATE) ||
           0 == ircd_strcmp(mptr->cmd, MSG_NOTICE) ||
-          0 == ircd_strcmp(mptr->cmd, MSG_TAGMSG));
+          0 == ircd_strcmp(mptr->cmd, MSG_TAGMSG) ||
+          0 == ircd_strcmp(mptr->cmd, MSG_BATCH_IRC));
 }
 
 static int prepend_message_tags(char *tags, struct Message *mptr, int argc) {
@@ -900,6 +919,50 @@ static int prepend_message_tags(char *tags, struct Message *mptr, int argc) {
   para[1] = tags;
 
   return argc + 1;
+}
+
+static void clear_response_label(struct Client *cptr) {
+  if (cptr && cli_connect(cptr))
+    cli_response_label(cptr)[0] = '\0';
+}
+
+static void set_response_label_from_tags(struct Client *cptr, char *tags) {
+  const char *tag_start;
+  const char *tag_end;
+  const char *eq;
+  const char *scan;
+  size_t len;
+
+  clear_response_label(cptr);
+
+  if (!cptr || !cli_connect(cptr) || !tags || *tags != '@' ||
+      !feature_bool(FEAT_CAP_LABELEDRESPONSE))
+    return;
+
+  scan = tags + 1;
+  while (*scan) {
+    tag_start = scan;
+    eq = 0;
+
+    while (*scan && *scan != ';') {
+      if (*scan == '=' && !eq)
+        eq = scan;
+      ++scan;
+    }
+    tag_end = scan;
+
+    if (eq && (eq - tag_start) == 5 && 0 == memcmp(tag_start, "label", 5)) {
+      len = (size_t)(tag_end - eq - 1);
+      if (len >= sizeof(cli_response_label(cptr)))
+        len = sizeof(cli_response_label(cptr)) - 1;
+
+      memcpy(cli_response_label(cptr), eq + 1, len);
+      cli_response_label(cptr)[len] = '\0';
+    }
+
+    if (*scan == ';')
+      ++scan;
+  }
 }
 
 /** Add a message to the lookup trie.
@@ -1059,6 +1122,8 @@ int parse_client(struct Client *cptr, char *buffer, char *bufend) {
   if (IsDead(cptr))
     return 0;
 
+  clear_response_label(cptr);
+
   para[0] = cli_name(from);
   for (ch = buffer; *ch == ' '; ch++)
     ; /* Eat leading spaces */
@@ -1073,6 +1138,7 @@ int parse_client(struct Client *cptr, char *buffer, char *bufend) {
         ++ch;
     }
   }
+  set_response_label_from_tags(cptr, tags);
   if (*ch == ':') /* Is any client doing this ? */
   {
     for (++ch; *ch && *ch != ' '; ++ch)
@@ -1084,6 +1150,7 @@ int parse_client(struct Client *cptr, char *buffer, char *bufend) {
     ServerStats->is_empt++;
     Debug((DEBUG_NOTICE, "Empty message from host %s:%s", cli_name(cptr),
            cli_name(from)));
+    clear_response_label(cptr);
     return (-1);
   }
 
@@ -1109,6 +1176,7 @@ int parse_client(struct Client *cptr, char *buffer, char *bufend) {
              get_client_name(cptr, HIDE_IP)));
     }
     ServerStats->is_unco++;
+    clear_response_label(cptr);
     return (-1);
   }
 
@@ -1188,7 +1256,10 @@ int parse_client(struct Client *cptr, char *buffer, char *bufend) {
       handler != m_ignore)
     cli_user(from)->last = CurrentTime;
 
-  return (*handler)(cptr, from, i, para);
+  i = (*handler)(cptr, from, i, para);
+  clear_response_label(cptr);
+
+  return i;
 }
 
 /** Parse a line of data from a server.

@@ -35,16 +35,22 @@
 #define CAPFL_PROHIBIT  0x0002	/**< Client may not set this capability */
 #define CAPFL_PROTO     0x0004	/**< Cap must be acknowledged by client */
 #define CAPFL_STICKY    0x0008  /**< Cap may not be cleared once set */
+#define CAPFL_OPER      0x0010  /**< Capability only available to IRCops */
 
 #define CAPLIST	\
 	_CAP(ACCOUNTNOTIFY, FEAT_CAP_ACCOUNTNOTIFY, 0, "account-notify"), \
 	_CAP(AWAYNOTIFY, FEAT_CAP_AWAYNOTIFY, 0 , "away-notify"), \
+	_CAP(BATCH, FEAT_CAP_BATCH, 0, "batch"), \
+	_CAP(CAPNOTIFY, FEAT_CAP_CAPNOTIFY, 0, "cap-notify"), \
 	_CAP(CHGHOST, FEAT_CAP_CHGHOST, 0, "chghost"), \
 	_CAP(ECHOMESSAGE, FEAT_CAP_ECHOMESSAGE, 0, "echo-message"), \
 	_CAP(EXTJOIN, FEAT_CAP_EXTJOIN, 0, "extended-join"), \
 	_CAP(INVITENOTIFY, FEAT_CAP_INVITENOTIFY, 0, "invite-notify"), \
+	_CAP(LABELEDRESPONSE, FEAT_CAP_LABELEDRESPONSE, 0, "labeled-response"), \
+	_CAP(MULTIPREFIX, FEAT_CAP_MULTIPREFIX, 0, "multi-prefix"), \
 	_CAP(MESSAGETAGS, FEAT_CAP_MESSAGETAGS, 0, "message-tags"), \
 	_CAP(SASL, FEAT_CAP_SASL, 0, "sasl"), \
+	_CAP(SERVERTIME, FEAT_CAP_SERVERTIME, 0, "server-time"), \
 	_CAP(UHNAMES, FEAT_CAP_UHNAMES, 0, "userhost-in-names")
 
 /** Client capabilities, counting by index. */
@@ -66,5 +72,12 @@ enum CapabBits {
 #define CapHas(cs, cap)	(cs & cap)
 #define CapSet(cs, cap)	(cs |= cap)
 #define CapClr(cs, cap)	(cs &= ~cap)
+
+#define HasCapNotify(cli) HasCap((cli), CAP_CAPNOTIFY)
+
+struct Client;
+extern void cap_send_new(struct Client *to, capset_t new_caps);
+extern void cap_send_del(struct Client *to, capset_t removed_caps);
+extern void cap_feature_notify(void);
 
 #endif /* INCLUDED_capab_h */

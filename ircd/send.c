@@ -47,6 +47,7 @@
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 /** Last used marker value. */
 static int sentalong_marker;
@@ -110,6 +111,126 @@ static int can_send(struct Client *to) {
 
 static int use_message_tags(const char *tags) {
   return feature_bool(FEAT_CAP_MESSAGETAGS) && tags && *tags == '@';
+}
+
+static int tags_have_time(const char *tags) {
+  if (!tags || *tags != '@')
+    return 0;
+  return (!ircd_strncmp(tags, "@time=", 6) || strstr(tags, ";time=") != 0);
+}
+
+static int tags_have_key(const char *tags, const char *key) {
+  const char *scan;
+  const char *tag_start;
+  size_t keylen;
+
+  if (!tags || *tags != '@' || EmptyString(key))
+    return 0;
+
+  keylen = strlen(key);
+  scan = tags + 1;
+  while (*scan) {
+    tag_start = scan;
+
+    while (*scan && *scan != ';' && *scan != '=')
+      ++scan;
+
+    if ((size_t)(scan - tag_start) == keylen &&
+        0 == memcmp(tag_start, key, keylen))
+      return 1;
+
+    while (*scan && *scan != ';')
+      ++scan;
+    if (*scan == ';')
+      ++scan;
+  }
+
+  return 0;
+}
+
+static const char *tags_with_server_time(const char *tags, char *out,
+                                         size_t outsz) {
+  struct tm *tm;
+
+  if (!feature_bool(FEAT_CAP_SERVERTIME) || tags_have_time(tags) || !out ||
+      outsz == 0)
+    return tags;
+
+  if (tags && *tags && *tags != '@')
+    return tags;
+
+  tm = gmtime(&CurrentTime);
+  if (!tm)
+    return tags;
+
+  if (use_message_tags(tags)) {
+    ircd_snprintf(0, out, outsz, "%s;time=%04d-%02d-%02dT%02d:%02d:%02d.000Z",
+                  tags, tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                  tm->tm_hour, tm->tm_min, tm->tm_sec);
+  }
+  else {
+    ircd_snprintf(0, out, outsz, "@time=%04d-%02d-%02dT%02d:%02d:%02d.000Z",
+                  tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                  tm->tm_hour, tm->tm_min, tm->tm_sec);
+  }
+  return out;
+}
+
+const char *decorate_response_tags(struct Client *to, const char *tags,
+                                   char *out) {
+  struct Client *real_to;
+  const char *result = tags;
+  const char *label;
+  char timed_tags[BUFSIZE];
+
+  if (!out)
+    return tags;
+  out[0] = '\0';
+
+  real_to = cli_from(to);
+  if (!real_to || !MyConnect(real_to) || IsServer(real_to) || !cli_connect(real_to))
+    return tags;
+
+  label = (feature_bool(FEAT_CAP_LABELEDRESPONSE) &&
+           CapActive(real_to, CAP_LABELEDRESPONSE) &&
+           !EmptyString(cli_response_label(real_to)))
+              ? cli_response_label(real_to)
+              : 0;
+
+  if (label && !tags_have_key(tags, "label")) {
+    if (use_message_tags(tags))
+      ircd_snprintf(0, out, BUFSIZE, "%s;label=%s", tags, label);
+    else if (EmptyString(tags))
+      ircd_snprintf(0, out, BUFSIZE, "@label=%s", label);
+    else
+      return tags;
+
+    result = out;
+  }
+
+  if (use_message_tags(result) && CapActive(real_to, CAP_SERVERTIME)) {
+    const char *timed = tags_with_server_time(result, timed_tags, sizeof(timed_tags));
+
+    if (timed != result) {
+      ircd_strncpy(out, timed, BUFSIZE);
+      out[BUFSIZE - 1] = '\0';
+      result = out;
+    }
+  }
+
+  return result;
+}
+
+void send_account_notify(struct Client *from, const char *account) {
+  const char *account_name;
+
+  if (!from || !IsUser(from) || IsMe(from) || !IsRegistered(from))
+    return;
+
+  account_name = EmptyString(account) ? "*" : account;
+  sendcmdto_capflag_common_channels_butone(from, CMD_ACCOUNT, cli_from(from),
+                                           CAP_ACCOUNTNOTIFY, 0, "%s",
+                                           account_name);
 }
 
 /** Close the connection with the highest sendq.
@@ -296,10 +417,38 @@ static int match_it(struct Client *from, struct Client *one, const char *mask,
 void sendrawto_one(struct Client *to, const char *pattern, ...) {
   struct MsgBuf *mb;
   va_list vl;
-
   va_start(vl, pattern);
   mb = msgq_vmake(to, pattern, vl);
   va_end(vl);
+
+  send_buffer(to, mb, 0);
+
+  msgq_clean(mb);
+}
+
+void sendrawto_one_tagged(struct Client *to, const char *tags,
+                          const char *pattern, ...) {
+  struct MsgBuf *mb;
+  va_list vl;
+  char line[BUFSIZE];
+  char tags_buf[BUFSIZE];
+  const char *effective_tags;
+  int tagged;
+
+  to = cli_from(to);
+
+  va_start(vl, pattern);
+  ircd_vsnprintf(to, line, sizeof(line), pattern, vl);
+  va_end(vl);
+
+  effective_tags = decorate_response_tags(to, tags, tags_buf);
+  tagged = use_message_tags(effective_tags) &&
+           !(MyUser(to) && !CapActive(to, CAP_MESSAGETAGS));
+
+  if (tagged)
+    mb = msgq_make(to, "%s %s", effective_tags, line);
+  else
+    mb = msgq_make(to, "%s", line);
 
   send_buffer(to, mb, 0);
 
@@ -317,14 +466,22 @@ void sendcmdto_one(struct Client *from, const char *cmd, const char *tok,
                    struct Client *to, const char *pattern, ...) {
   struct VarData vd;
   struct MsgBuf *mb;
+  char tags_buf[BUFSIZE];
+  const char *tags = 0;
 
   to = cli_from(to);
+  if (from == &me)
+    tags = decorate_response_tags(to, 0, tags_buf);
 
   vd.vd_format = pattern; /* set up the struct VarData for %v */
   va_start(vd.vd_args, pattern);
 
-  mb = msgq_make(to, "%:#C %s %v", from, IsServer(to) || IsMe(to) ? tok : cmd,
-                 &vd);
+  if (use_message_tags(tags))
+    mb = msgq_make(to, "%s %:#C %s %v", tags, from,
+                   IsServer(to) || IsMe(to) ? tok : cmd, &vd);
+  else
+    mb = msgq_make(to, "%:#C %s %v", from,
+                   IsServer(to) || IsMe(to) ? tok : cmd, &vd);
 
   va_end(vd.vd_args);
 
@@ -338,16 +495,20 @@ void sendcmdto_one_tagged(struct Client *from, const char *cmd,
                          const char *tags, const char *pattern, ...) {
   struct VarData vd;
   struct MsgBuf *mb;
+  char tags_buf[BUFSIZE];
+  const char *effective_tags;
   int tagged;
 
   to = cli_from(to);
-  tagged = use_message_tags(tags) && !(MyUser(to) && !CapActive(to, CAP_MESSAGETAGS));
+  effective_tags = decorate_response_tags(to, tags, tags_buf);
+  tagged = use_message_tags(effective_tags) &&
+           !(MyUser(to) && !CapActive(to, CAP_MESSAGETAGS));
 
   vd.vd_format = pattern;
   va_start(vd.vd_args, pattern);
 
   if (tagged)
-    mb = msgq_make(to, "%s %:#C %s %v", tags, from,
+    mb = msgq_make(to, "%s %:#C %s %v", effective_tags, from,
                    IsServer(to) || IsMe(to) ? tok : cmd, &vd);
   else
     mb = msgq_make(to, "%:#C %s %v", from,
@@ -706,8 +867,16 @@ void sendcmdto_capflag_channel_butserv_butone_tagged(
   struct VarData vd;
   struct MsgBuf *user_mb;
   struct MsgBuf *tagged_user_mb = 0;
+  struct MsgBuf *tagged_user_time_mb = 0;
   struct Membership *member;
-  int tagged = use_message_tags(tags);
+  char tags_buf[BUFSIZE];
+  const char *tags_time;
+  int tagged;
+  int tagged_time;
+
+  tags_time = tags_with_server_time(tags, tags_buf, sizeof(tags_buf));
+  tagged = use_message_tags(tags);
+  tagged_time = use_message_tags(tags_time);
 
   vd.vd_format = pattern;
 
@@ -721,6 +890,13 @@ void sendcmdto_capflag_channel_butserv_butone_tagged(
     va_end(vd.vd_args);
   }
 
+  if (tagged_time && (!tagged || tags_time != tags)) {
+    va_start(vd.vd_args, pattern);
+    tagged_user_time_mb =
+        msgq_make(0, "%s %:#C %s %v", tags_time, from, cmd, &vd);
+    va_end(vd.vd_args);
+  }
+
   for (member = to->members; member; member = member->next_member) {
     if (!MyConnect(member->user) || member->user == one || IsZombie(member) ||
         (skip & SKIP_DEAF && IsDeaf(member->user)) ||
@@ -730,8 +906,15 @@ void sendcmdto_capflag_channel_butserv_butone_tagged(
         (forbid && CapHas(cli_active(member->user), forbid)))
       continue;
 
-    if (tagged && CapActive(member->user, CAP_MESSAGETAGS))
-      send_buffer(member->user, tagged_user_mb, 0);
+    if (CapActive(member->user, CAP_MESSAGETAGS) &&
+        (tagged_user_mb || tagged_user_time_mb)) {
+      if (tagged_user_time_mb && CapActive(member->user, CAP_SERVERTIME))
+        send_buffer(member->user, tagged_user_time_mb, 0);
+      else if (tagged_user_mb)
+        send_buffer(member->user, tagged_user_mb, 0);
+      else
+        send_buffer(member->user, user_mb, 0);
+    }
     else
       send_buffer(member->user, user_mb, 0);
   }
@@ -739,6 +922,8 @@ void sendcmdto_capflag_channel_butserv_butone_tagged(
   msgq_clean(user_mb);
   if (tagged_user_mb)
     msgq_clean(tagged_user_mb);
+  if (tagged_user_time_mb)
+    msgq_clean(tagged_user_time_mb);
 }
 
 /* Send JOIN to all local channel users matching or not matching
@@ -953,8 +1138,16 @@ void sendcmdto_channel_butone_tagged(struct Client *from, const char *cmd,
   struct VarData vd;
   struct MsgBuf *user_mb;
   struct MsgBuf *tagged_user_mb = 0;
+  struct MsgBuf *tagged_user_time_mb = 0;
   struct MsgBuf *serv_mb;
-  int tagged = use_message_tags(tags);
+  char tags_buf[BUFSIZE];
+  const char *tags_time;
+  int tagged;
+  int tagged_time;
+
+  tags_time = tags_with_server_time(tags, tags_buf, sizeof(tags_buf));
+  tagged = use_message_tags(tags);
+  tagged_time = use_message_tags(tags_time);
 
   vd.vd_format = pattern;
 
@@ -969,6 +1162,16 @@ void sendcmdto_channel_butone_tagged(struct Client *from, const char *cmd,
     tagged_user_mb = msgq_make(0,
                       skip & (SKIP_NONOPS | SKIP_NONVOICES) ? "%s %:#C %s @%v" : "%s %:#C %s %v",
                       tags, from, skip & (SKIP_NONOPS | SKIP_NONVOICES) ? MSG_NOTICE : cmd, &vd);
+    va_end(vd.vd_args);
+  }
+
+  if (tagged_time && (!tagged || tags_time != tags)) {
+    va_start(vd.vd_args, pattern);
+    tagged_user_time_mb = msgq_make(0,
+                      skip & (SKIP_NONOPS | SKIP_NONVOICES) ? "%s %:#C %s @%v" : "%s %:#C %s %v",
+                      tags_time, from,
+                      skip & (SKIP_NONOPS | SKIP_NONVOICES) ? MSG_NOTICE : cmd,
+                      &vd);
     va_end(vd.vd_args);
   }
 
@@ -989,8 +1192,15 @@ void sendcmdto_channel_butone_tagged(struct Client *from, const char *cmd,
     cli_sentalong(member->user) = sentalong_marker;
 
     if (MyConnect(member->user)) {
-      if (tagged && CapActive(member->user, CAP_MESSAGETAGS))
-        send_buffer(member->user, tagged_user_mb, 0);
+      if (CapActive(member->user, CAP_MESSAGETAGS) &&
+          (tagged_user_mb || tagged_user_time_mb)) {
+        if (tagged_user_time_mb && CapActive(member->user, CAP_SERVERTIME))
+          send_buffer(member->user, tagged_user_time_mb, 0);
+        else if (tagged_user_mb)
+          send_buffer(member->user, tagged_user_mb, 0);
+        else
+          send_buffer(member->user, user_mb, 0);
+      }
       else
         send_buffer(member->user, user_mb, 0);
     } else {
@@ -1001,6 +1211,8 @@ void sendcmdto_channel_butone_tagged(struct Client *from, const char *cmd,
   msgq_clean(user_mb);
   if (tagged_user_mb)
     msgq_clean(tagged_user_mb);
+  if (tagged_user_time_mb)
+    msgq_clean(tagged_user_time_mb);
   msgq_clean(serv_mb);
 }
 
@@ -1131,8 +1343,13 @@ void sendcmdto_match_butone_tagged(struct Client *from, const char *cmd,
   struct Client *cptr;
   struct MsgBuf *user_mb;
   struct MsgBuf *tagged_user_mb = 0;
+  struct MsgBuf *tagged_user_time_mb = 0;
   struct MsgBuf *serv_mb;
+  char tags_buf[BUFSIZE];
+  const char *tags_time;
   int tagged = use_message_tags(tags);
+
+  tags_time = tags_with_server_time(tags, tags_buf, sizeof(tags_buf));
 
   vd.vd_format = pattern;
 
@@ -1144,6 +1361,13 @@ void sendcmdto_match_butone_tagged(struct Client *from, const char *cmd,
     va_start(vd.vd_args, pattern);
     tagged_user_mb = msgq_make(0, "%s %:#C %s %v", tags, from, cmd, &vd);
     va_end(vd.vd_args);
+
+    if (tags_time != tags) {
+      va_start(vd.vd_args, pattern);
+      tagged_user_time_mb =
+          msgq_make(0, "%s %:#C %s %v", tags_time, from, cmd, &vd);
+      va_end(vd.vd_args);
+    }
   }
 
   va_start(vd.vd_args, pattern);
@@ -1160,8 +1384,12 @@ void sendcmdto_match_butone_tagged(struct Client *from, const char *cmd,
     cli_sentalong(cptr) = sentalong_marker;
 
     if (MyConnect(cptr)) {
-      if (tagged && CapActive(cptr, CAP_MESSAGETAGS))
-        send_buffer(cptr, tagged_user_mb, 0);
+      if (tagged && CapActive(cptr, CAP_MESSAGETAGS)) {
+        if (tagged_user_time_mb && CapActive(cptr, CAP_SERVERTIME))
+          send_buffer(cptr, tagged_user_time_mb, 0);
+        else
+          send_buffer(cptr, tagged_user_mb, 0);
+      }
       else
         send_buffer(cptr, user_mb, 0);
     } else {
@@ -1172,6 +1400,8 @@ void sendcmdto_match_butone_tagged(struct Client *from, const char *cmd,
   msgq_clean(user_mb);
   if (tagged_user_mb)
     msgq_clean(tagged_user_mb);
+  if (tagged_user_time_mb)
+    msgq_clean(tagged_user_time_mb);
   msgq_clean(serv_mb);
 }
 

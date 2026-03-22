@@ -97,6 +97,29 @@
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <string.h>
 
+static void
+names_append_member_prefixes(struct Client* sptr, struct Membership* member,
+                             char* buf, int* idx)
+{
+  if (IsZombie(member)) {
+    buf[(*idx)++] = '!';
+    return;
+  }
+
+  if (CapHas(cli_active(sptr), CAP_MULTIPREFIX)) {
+    if (IsChanOp(member))
+      buf[(*idx)++] = '@';
+    if (HasVoice(member))
+      buf[(*idx)++] = '+';
+    return;
+  }
+
+  if (IsChanOp(member))
+    buf[(*idx)++] = '@';
+  else if (HasVoice(member))
+    buf[(*idx)++] = '+';
+}
+
 /*
  *  Sends a suitably formatted 'names' reply to 'sptr' consisting of nicks within
  *  'chptr', depending on 'filter'.
@@ -116,10 +139,14 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
   int flag;
   int needs_space; 
   int len; 
-  int cap_extra = CapHas(cli_active(sptr), CAP_UHNAMES) ? (1 + USERLEN + 1 + HOSTLEN) : 0;
+  int cap_extra;
   char buf[BUFSIZE];
   struct Client *c2ptr;
   struct Membership* member;
+
+  cap_extra = CapHas(cli_active(sptr), CAP_UHNAMES) ? (1 + USERLEN + 1 + HOSTLEN) : 0;
+  if (CapHas(cli_active(sptr), CAP_MULTIPREFIX))
+    cap_extra += 1;
   
   assert(chptr);
   assert(sptr);
@@ -167,12 +194,7 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
     if (needs_space)
       buf[idx++] = ' ';
     needs_space=1;
-    if (IsZombie(member))
-      buf[idx++] = '!';
-    else if (IsChanOp(member))
-      buf[idx++] = '@';
-    else if (HasVoice(member))
-      buf[idx++] = '+';
+    names_append_member_prefixes(sptr, member, buf, &idx);
     strcpy(buf + idx, cli_name(c2ptr));
     idx += strlen(cli_name(c2ptr));
 

@@ -2163,15 +2163,23 @@ static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli, int parc,
       send_reply(cli, ERR_SASLFAIL);
       return 0;
     }
+    int had_account = IsAccount(cli);
+    char old_account[ACCOUNTLEN + 1];
     char *nick = params[1];
     char *account = params[2];
     char *timestamp = params[3];
     char *id = params[4];
 
+    old_account[0] = '\0';
+    if (had_account)
+      ircd_strncpy(old_account, cli_user(cli)->account, ACCOUNTLEN + 1);
+
     ircd_strncpy(cli_user(cli)->account, account, ACCOUNTLEN);
     cli_user(cli)->acc_create = atoi(timestamp);
     cli_user(cli)->acc_id = strtoul(id, NULL, 10);
     SetAccount(cli);
+    if (!had_account || 0 != strcmp(old_account, cli_user(cli)->account))
+      send_account_notify(cli, cli_user(cli)->account);
     send_reply(cli, RPL_LOGGEDIN, cli, cli_name(cli), account);
     send_reply(cli, RPL_SASLSUCCESS);
 

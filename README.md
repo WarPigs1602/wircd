@@ -136,21 +136,32 @@ Credential/hash helpers:
 
 ### IRCv3 support (implemented)
 
-Client capability negotiation and tag parsing are implemented.
+Client capability negotiation and tag parsing are fully implemented with support for
+CAP versioning (3.01+) and message tag decoration.
 
 Currently advertised/implemented IRCv3 capabilities (feature-gated):
 
-- `account-notify`
-- `away-notify`
-- `chghost`
-- `echo-message`
-- `extended-join`
-- `invite-notify`
-- `message-tags`
-- `sasl`
+- `account-notify` — Account change notifications to shared-channel users
+- `away-notify` — Away status change notifications
+- `batch` — Message batching for atomic multi-message operations
+- `cap-notify` — Server-side capability change notifications (CAP 3.02+)
+- `chghost` — Host change notifications
+- `echo-message` — Echo sent messages back to sender
+- `extended-join` — Extended JOIN information with account/realname
+- `invite-notify` — Channel invite notifications to channel operators
+- `labeled-response` — Request-response correlation via labels
+- `message-tags` — Message tag support for metadata propagation
+- `multi-prefix` — Multiple user modes per user in NAMES output
+- `sasl` — PLAIN mechanism for SASL authentication
+- `server-time` — ISO 8601 timestamps on messages
+- `userhost-in-names` — Full user@host format in NAMES output
 
-Related command support includes `CAP`, `AUTHENTICATE` (SASL flow), and
-`TAGMSG` for `message-tags` capable clients.
+Related command support includes:
+- `CAP` — Capability negotiation with LIST, LS, REQ, ACK, NAK, CLEAR, END subcmds
+- `AUTHENTICATE` — SASL authentication flow
+- `ACCOUNT` — Account assignment (server-to-client messaging)
+- `TAGMSG` — Message-tags-only messages for metadata propagation
+- `BATCH` — Message batching for atomic operations
 
 ### Identity and policy controls
 

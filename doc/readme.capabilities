@@ -1,0 +1,155 @@
+IRCv3 Capability Support
+=========================
+
+This document describes the IRCv3 capabilities that wircd (ircu2.10-based) supports.
+
+Overview
+--------
+
+Capabilities (CAPs) allow clients to negotiate features with the server during 
+connection registration. The server advertises capabilities that clients may request,
+enabling backward compatibility while supporting modern IRC extensions.
+
+CAP Negotiation Flow
+--------------------
+
+1. Client sends: CAP LS [version]
+   - Requests capability list (version optional, defaults to 301)
+
+2. Server responds with: CAP * LS :[capabilities]
+   - In CAP 3.02+, includes capability values (e.g., "sasl=PLAIN")
+
+3. Client sends: CAP REQ :[capabilities]
+   - Requests specific capabilities
+
+4. Server responds with: CAP * ACK :[capabilities] or CAP * NAK :[capabilities]
+   - ACK: Requested capabilities are available
+   - NAK: Some requested capabilities are unavailable
+
+5. Client sends: CAP END
+   - Completes capability negotiation and begins login
+
+Supported Capabilities
+----------------------
+
+Configuration Features (FEAT_CAP_*):
+
+- account-notify (FEAT_CAP_ACCOUNTNOTIFY)
+  When enabled, clients see ACCOUNT messages when other users on shared channels
+  change their account status. Useful for services integrations.
+  
+- away-notify (FEAT_CAP_AWAYNOTIFY)
+  Notifies clients when users on shared channels change away status without
+  sending AWAY messages unnecessarily.
+  
+- batch (FEAT_CAP_BATCH)
+  Allows servers to send atomic groups of messages marked with batch identifiers.
+  Enables clients to display multi-message operations (like ban lists) atomically.
+  
+- cap-notify (FEAT_CAP_CAPNOTIFY)
+  Only available in CAP 3.02+. Notifies clients of server capability changes
+  via CAP NEW and CAP DEL messages.
+  
+- chghost (FEAT_CAP_CHGHOST)
+  Notifies clients when other users' hostnames or usernames change.
+  
+- echo-message (FEAT_CAP_ECHOMESSAGE)
+  Server echoes PRIVMSG and NOTICE back to the sender, allowing clients to
+  display their own messages in real-time.
+  
+- extended-join (FEAT_CAP_EXTJOIN)
+  Extends JOIN messages to include the joining user's account name and full
+  realname, reducing the need for extra WHOIS queries.
+  
+- invite-notify (FEAT_CAP_INVITENOTIFY)
+  Notifies channel operators when users are invited to the channel.
+  
+- labeled-response (FEAT_CAP_LABELEDRESPONSE)
+  Allows clients to label requests with request-IDs that are echoed in responses,
+  enabling correlation between requests and responses.
+  
+- message-tags (FEAT_CAP_MESSAGETAGS)
+  Enables message tag support, allowing metadata to be attached to messages.
+  Tags appear after the message prefix: @tag1=value;tag2 :nick!user@host PRIVMSG
+  
+- multi-prefix (FEAT_CAP_MULTIPREFIX)
+  Users can have multiple mode prefixes in NAMES output. With multi-prefix,
+  a voiced operator appears as "@+" instead of just "@".
+  
+- sasl (FEAT_CAP_SASL)
+  Enables SASL authentication (value: PLAIN) during registration before
+  entering any channels.
+  
+- server-time (FEAT_CAP_SERVERTIME)
+  Server includes ISO 8601 timestamps on messages via @time tag.
+  
+- userhost-in-names (FEAT_CAP_UHNAMES)
+  NAMES output includes full user@host instead of just nicknames,
+  reducing need for WHOIS queries.
+
+Configuration
+--------------
+
+All capabilities are controlled by feature flags in the server configuration.
+Enable capabilities in ircd.conf using the Features block:
+
+  Features {
+    "CAP_ACCOUNTNOTIFY" = "TRUE";
+    "CAP_AWAYNOTIFY" = "TRUE";
+    "CAP_BATCH" = "TRUE";
+    "CAP_CAPNOTIFY" = "TRUE";
+    "CAP_CHGHOST" = "TRUE";
+    "CAP_ECHOMESSAGE" = "TRUE";
+    "CAP_EXTJOIN" = "TRUE";
+    "CAP_INVITENOTIFY" = "TRUE";
+    "CAP_LABELEDRESPONSE" = "TRUE";
+    "CAP_MESSAGETAGS" = "TRUE";
+    "CAP_MULTIPREFIX" = "TRUE";
+    "CAP_SASL" = "TRUE";
+    "CAP_SERVERTIME" = "TRUE";
+    "CAP_UHNAMES" = "TRUE";
+  };
+
+Related Settings
+-----------------
+
+Message Tags:
+  - "CAP_MESSAGETAGS" enables message-tags capability
+  - "CLIENTTAGDENY" specifies tags clients are not allowed to use (default: "")
+  - "TAGMSG_LINE_TAGS_MAX" maximum tags per message (default: 1024)
+
+SASL:
+  - "CAP_SASL" enables capability (value always "PLAIN")
+  - SASL authentication via AUTHENTICATE command
+
+Commands Related to Capabilities
+---------------------------------
+
+CAP [LS|LIST|REQ|ACK|NAK|CLEAR|NEW|DEL|END] [capabilities]
+  - LS: List available capabilities
+  - LIST: List active capabilities for this connection
+  - REQ: Request capabilities
+  - ACK: Server acknowledges requested capabilities
+  - NAK: Server rejects requested capabilities
+  - CLEAR: Clear active capabilities
+  - NEW: Server notifies of new capabilities (requires cap-notify)
+  - DEL: Server notifies of removed capabilities (requires cap-notify)
+  - END: Finish capability negotiation
+
+ACCOUNT [*|account_name]
+  - Sent by server to notify account changes (with account-notify)
+  - Sent by services to set/clear user accounts
+
+TAGMSG #channel :@tag1=value;tag2
+  - Send message with tags only (requires message-tags)
+  - No PRIVMSG/NOTICE message body, just tags
+
+AUTHENTICATE [PLAIN base64_credentials]
+  - Perform SASL authentication (requires sasl capability)
+
+References
+-----------
+
+- IRCv3 Specifications: https://ircv3.net/
+- Undernet P10 Protocol: doc/p10.html
+

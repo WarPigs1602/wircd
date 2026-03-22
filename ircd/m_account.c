@@ -108,6 +108,10 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
 	       char* parv[])
 {
   struct Client *acptr;
+  int had_account;
+  char old_account[ACCOUNTLEN + 1];
+  int account_changed;
+  int clear_account;
 
   if (parc < 3)
     return need_more_params(sptr, "ACCOUNT");
@@ -119,28 +123,46 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
   if (!(acptr = findNUser(parv[1])))
     return 0; /* Ignore ACCOUNT for a user that QUIT; probably crossed */
 
-  if (IsAccount(acptr) && ((parc < 5) || (parc >= 5 && cli_user(acptr)->acc_id)))
-    return protocol_violation(cptr, "ACCOUNT for already registered user %s "
-			      "(%s -> %s)", cli_name(acptr),
-			      cli_user(acptr)->account, parv[2]);
+  had_account = IsAccount(acptr);
+  old_account[0] = '\0';
+  if (had_account)
+    ircd_strncpy(old_account, cli_user(acptr)->account, ACCOUNTLEN + 1);
+  account_changed = 0;
+  clear_account = (parv[2][0] == '*' && parv[2][1] == '\0');
+
+  if (clear_account) {
+    if (had_account) {
+      ClrFlag(acptr, FLAG_ACCOUNT);
+      cli_user(acptr)->account[0] = '\0';
+      cli_user(acptr)->acc_create = 0;
+      cli_user(acptr)->acc_id = 0;
+      account_changed = 1;
+    }
+
+    if (account_changed)
+      send_account_notify(acptr, "*");
+
+    sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C *", acptr);
+    return 0;
+  }
 
   /* special case for current snircd release only */
   if (parc >= 5 && cli_user(acptr)->account[0]) {
     if (strcmp(cli_user(acptr)->account, parv[2])) {
-      return protocol_violation(cptr, "ACCOUNT change for already registered user %s "
-                                "(%s -> %s)", cli_name(acptr),
-                                cli_user(acptr)->account, parv[2]);
+      account_changed = 1;
     }
     cli_user(acptr)->acc_create = atoi(parv[3]);
     cli_user(acptr)->acc_id = strtoul(parv[4], NULL, 10);      
+    ircd_strncpy(cli_user(acptr)->account, parv[2], ACCOUNTLEN);
+    hide_hostmask(acptr, FLAG_ACCOUNT);
+    if (account_changed)
+      send_account_notify(acptr, cli_user(acptr)->account);
     sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s %Tu %lu",
                               acptr, cli_user(acptr)->account,
                               cli_user(acptr)->acc_create,
                               cli_user(acptr)->acc_id);
     return 0;
   }
-
-  assert(0 == cli_user(acptr)->account[0]);
 
   if (strlen(parv[2]) > ACCOUNTLEN)
     return protocol_violation(cptr,
@@ -158,8 +180,13 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
     }
   }
 
+  if (!had_account || 0 != strcmp(old_account, parv[2]))
+    account_changed = 1;
+
   ircd_strncpy(cli_user(acptr)->account, parv[2], ACCOUNTLEN);
   hide_hostmask(acptr, FLAG_ACCOUNT);
+  if (account_changed)
+    send_account_notify(acptr, cli_user(acptr)->account);
 
    if (cli_user(acptr)->acc_id) {
      sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s %Tu %lu",

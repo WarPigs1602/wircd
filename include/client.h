@@ -228,6 +228,8 @@ struct Connection
   /* TAGMSG rate limiting (per-connection) */
   time_t              con_tagmsg_window; /**< Window start (seconds) for TAGMSG rate */
   unsigned int        con_tagmsg_count;  /**< TAGMSGs seen in current window */
+  unsigned short      con_cap_version;   /**< Negotiated CAP version (301/302) */
+  char                con_response_label[256]; /**< Label echoed in direct responses */
   struct MsgQ         con_sendQ;     /**< Outgoing message queue */
   struct DBuf         con_recvQ;     /**< Incoming data yet to be parsed */
   unsigned int        con_sendM;     /**< Stats: protocol messages sent */
@@ -345,6 +347,10 @@ struct Client {
 #define cli_capab(cli)		con_capab(cli_connect(cli))
 /** Get active client capabilities for client */
 #define cli_active(cli)		con_active(cli_connect(cli))
+/** Get negotiated CAP version for client. */
+#define cli_cap_version(cli)	con_cap_version(cli_connect(cli))
+/** Get the current response label for client. */
+#define cli_response_label(cli) con_response_label(cli_connect(cli))
 /** Get client name. */
 #define cli_name(cli)		((cli)->cli_name)
 /** Get client username (ident). */
@@ -457,6 +463,10 @@ struct Client {
 #define con_tagmsg_window(con)  ((con)->con_tagmsg_window)
 /** Get TAGMSG count in current window. */
 #define con_tagmsg_count(con)   ((con)->con_tagmsg_count)
+/** Get negotiated CAP version for the connection. */
+#define con_cap_version(con)    ((con)->con_cap_version)
+/** Get the current response label for the connection. */
+#define con_response_label(con) ((con)->con_response_label)
 /** Get SendQ for connection. */
 #define con_sendQ(con)		((con)->con_sendQ)
 /** Get RecvQ for connection. */

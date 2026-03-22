@@ -99,11 +99,13 @@ IRCD_SRC = \
 	cloak.c \
 	crule.c \
 	dbuf.c \
+	history.c \
 	destruct_event.c \
 	fileio.c \
 	gline.c \
 	hash.c \
 	ircd.c \
+	batch.c \
 	ircd_alloc.c \
 	ircd_crypt.c \
 	ircd_events.c \
@@ -125,7 +127,9 @@ IRCD_SRC = \
 	m_admin.c \
 	m_asll.c \
 	m_authenticate.c \
+	m_batch.c \
 	m_away.c \
+	m_history.c \
 	m_burst.c \
 	m_cap.c \
 	m_check.c \
@@ -264,7 +268,7 @@ version.c: version.c.SH ${top_srcdir}/include/patchlist.h umkpasswd
 	${SHELL} ${srcdir}/version.c.SH ${top_srcdir}
 
 ${top_srcdir}/include/patchlist.h:
-	(cd ${top_srcdir} ; ./ircd-patch update)
+	(cd ${top_srcdir} ; tr -d '\015' < ./ircd-patch | ${SHELL} -s -- update)
 
 ircd_string.o: ircd_string.c chattr.tab.c
 

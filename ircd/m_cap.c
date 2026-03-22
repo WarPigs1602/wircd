@@ -35,6 +35,7 @@
 #include "ircd_string.h"
 #include "msg.h"
 #include "numeric.h"
+#include "s_bsd.h"
 #include "send.h"
 #include "s_auth.h"
 #include "s_misc.h"
@@ -52,14 +53,32 @@ static struct capabilities {
   unsigned long flags;
   char *name;
   int namelen;
+  char *value;
 } capab_list[] = {
 #define _CAP(cap, config, flags, name)      \
-	{ CAP_ ## cap, #cap, (config), (flags), (name), sizeof(name) - 1 }
+	{ CAP_ ## cap, #cap, (config), (flags), (name), sizeof(name) - 1, 0 }
   CAPLIST
 #undef _CAP
 };
 
 #define CAPAB_LIST_LEN	(sizeof(capab_list) / sizeof(struct capabilities))
+
+static void
+init_capability_values(void)
+{
+  static int initialized = 0;
+  unsigned int i;
+
+  if (initialized)
+    return;
+
+  for (i = 0; i < CAPAB_LIST_LEN; i++) {
+    if (capab_list[i].cap == CAP_SASL)
+      capab_list[i].value = "PLAIN";
+  }
+
+  initialized = 1;
+}
 
 static int
 capab_sort(const struct capabilities *cap1, const struct capabilities *cap2)
@@ -97,6 +116,7 @@ find_cap(const char **caplist_p, int *neg_p)
   if (!inited) { /* First, let's sort the array... */
     qsort(capab_list, CAPAB_LIST_LEN, sizeof(struct capabilities),
 	  (bqcmp)capab_sort);
+    init_capability_values();
     inited++; /* remember that we've done this step... */
   }
 
@@ -151,11 +171,27 @@ send_caplist(struct Client *sptr, capset_t set,
              capset_t rem, const char *subcmd)
 {
   char capbuf[BUFSIZE] = "", pfx[16];
+  char tags_buf[BUFSIZE];
   struct MsgBuf *mb;
+  const char *tags;
   int i, loc, len, flags, pfx_len;
+  int cap_version = 301;
+  int cap_302;
+
+  if (cli_connect(sptr) && cli_cap_version(sptr) >= 301)
+    cap_version = cli_cap_version(sptr);
+  cap_302 = (cap_version >= 302);
+
+  /* Ensure CAP values (e.g. sasl=PLAIN) are available on first CAP LS. */
+  init_capability_values();
 
   /* set up the buffer for the final LS message... */
-  mb = msgq_make(sptr, "%:#C " MSG_CAP " %C %s :", &me, sptr, subcmd);
+  tags = decorate_response_tags(sptr, 0, tags_buf);
+  if (tags && *tags == '@')
+    mb = msgq_make(sptr, "%s %:#C " MSG_CAP " %C %s :", tags, &me, sptr,
+                   subcmd);
+  else
+    mb = msgq_make(sptr, "%:#C " MSG_CAP " %C %s :", &me, sptr, subcmd);
 
   for (i = 0, loc = 0; i < CAPAB_LIST_LEN; i++) {
     flags = capab_list[i].flags;
@@ -193,13 +229,22 @@ send_caplist(struct Client *sptr, capset_t set,
     pfx[pfx_len] = '\0';
 
     len = capab_list[i].namelen + pfx_len; /* how much we'd add... */
+    if (cap_302 && capab_list[i].value
+        && (!ircd_strcmp(subcmd, "LS") || !ircd_strcmp(subcmd, "NEW")))
+      len += 1 + strlen(capab_list[i].value);
+
     if (msgq_bufleft(mb) < loc + len + 2) { /* would add too much; must flush */
       sendcmdto_one(&me, CMD_CAP, sptr, "%C %s * :%s", sptr, subcmd, capbuf);
       capbuf[(loc = 0)] = '\0'; /* re-terminate the buffer... */
     }
 
-    loc += ircd_snprintf(0, capbuf + loc, sizeof(capbuf) - loc, "%s%s",
-			 pfx, capab_list[i].name);
+    if (cap_302 && capab_list[i].value
+        && (!ircd_strcmp(subcmd, "LS") || !ircd_strcmp(subcmd, "NEW")))
+      loc += ircd_snprintf(0, capbuf + loc, sizeof(capbuf) - loc, "%s%s=%s",
+			   pfx, capab_list[i].name, capab_list[i].value);
+    else
+      loc += ircd_snprintf(0, capbuf + loc, sizeof(capbuf) - loc, "%s%s",
+			   pfx, capab_list[i].name);
   }
 
   msgq_append(0, mb, "%s", capbuf); /* append capabilities to the final cmd */
@@ -212,7 +257,25 @@ send_caplist(struct Client *sptr, capset_t set,
 static int
 cap_ls(struct Client *sptr, const char *caplist)
 {
-  if (IsUserPort(sptr) || IsWebircPort(sptr))
+  int cap_version = 301;
+
+  if (caplist && *caplist) {
+    cap_version = atoi(caplist);
+    if (cap_version < 301)
+      cap_version = 301;
+    else if (cap_version > 302)
+      cap_version = 302;
+  }
+
+  if (cli_connect(sptr))
+    cli_cap_version(sptr) = cap_version;
+
+  if (cap_version >= 302) {
+    CapSet(cli_capab(sptr), CAP_CAPNOTIFY);
+    CapSet(cli_active(sptr), CAP_CAPNOTIFY);
+  }
+
+  if ((IsUserPort(sptr) || IsWebircPort(sptr)) && cli_auth(sptr))
     /* registration hasn't completed; suspend it... */
     auth_cap_start(cli_auth(sptr));
   return send_caplist(sptr, 0, 0, "LS"); /* send list of capabilities */
@@ -228,7 +291,7 @@ cap_req(struct Client *sptr, const char *caplist)
   capset_t as = cli_active(sptr); /* active set */
   int neg;
 
-  if (IsUserPort(sptr) || IsWebircPort(sptr))
+  if ((IsUserPort(sptr) || IsWebircPort(sptr)) && cli_auth(sptr))
     /* registration hasn't completed; suspend it... */
     auth_cap_start(cli_auth(sptr));
 
@@ -325,6 +388,9 @@ cap_end(struct Client *sptr, const char *caplist)
     /* registration has completed... */
     return 0; /* so just ignore the message... */
 
+  if (!cli_auth(sptr))
+    return 0;
+
   return auth_cap_done(cli_auth(sptr));
 }
 
@@ -335,16 +401,72 @@ cap_list(struct Client *sptr, const char *caplist)
   return send_caplist(sptr, cli_capab(sptr), 0, "LIST");
 }
 
+void
+cap_send_new(struct Client *to, capset_t new_caps)
+{
+  if (!HasCapNotify(to))
+    return;
+
+  send_caplist(to, new_caps, 0, "NEW");
+}
+
+void
+cap_send_del(struct Client *to, capset_t removed_caps)
+{
+  if (!HasCapNotify(to))
+    return;
+
+  send_caplist(to, 0, removed_caps, "DEL");
+}
+
+void
+cap_feature_notify(void)
+{
+  struct Client *acptr;
+  capset_t new_caps = 0, del_caps = 0;
+  int i;
+
+  for (i = 0; i < CAPAB_LIST_LEN; i++) {
+    if (feature_bool(capab_list[i].config))
+      CapSet(new_caps, capab_list[i].cap);
+    else
+      CapSet(del_caps, capab_list[i].cap);
+  }
+
+  for (i = 0; i <= HighestFd; i++) {
+    if (!(acptr = LocalClientArray[i]) || !IsUser(acptr) || !HasCapNotify(acptr))
+      continue;
+    if (new_caps)
+      cap_send_new(acptr, new_caps);
+    if (del_caps)
+      cap_send_del(acptr, del_caps);
+  }
+}
+
+static int
+cap_new(struct Client *sptr, const char *caplist)
+{
+  return 0;
+}
+
+static int
+cap_del(struct Client *sptr, const char *caplist)
+{
+  return 0;
+}
+
 static struct subcmd {
   char *cmd;
   int (*proc)(struct Client *sptr, const char *caplist);
 } cmdlist[] = {
   { "ACK",   cap_ack   },
   { "CLEAR", cap_clear },
+  { "DEL",   cap_del   },
   { "END",   cap_end   },
   { "LIST",  cap_list  },
   { "LS",    cap_ls    },
   { "NAK",   0         },
+  { "NEW",   cap_new   },
   { "REQ",   cap_req   }
 };
 

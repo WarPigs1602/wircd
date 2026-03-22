@@ -22,6 +22,7 @@
  */
 #include "config.h"
 
+#include "capab.h" /* cap_feature_notify */
 #include "channel.h" /* list_set_default */
 #include "class.h"
 #include "client.h"
@@ -379,15 +380,20 @@ static struct FeatureDesc {
     F_B(SETHOST_AUTO, 0, 0, 0),
 
     /* IRCv3 capabilities */
-    F_B(CAP_ACCOUNTNOTIFY, 0, 1, 0),
-    F_B(CAP_AWAYNOTIFY, 0, 1, 0),
-    F_B(CAP_CHGHOST, 0, 1, 0),
-    F_B(CAP_ECHOMESSAGE, 0, 1, 0),
-    F_B(CAP_EXTJOIN, 0, 1, 0),
-    F_B(CAP_INVITENOTIFY, 0, 1, 0),
-    F_B(CAP_MESSAGETAGS, 0, 1, 0),
-    F_B(CAP_SASL, 0, 1, 0),
-    F_B(CAP_UHNAMES, 0, 1, 0),
+    F_B(CAP_ACCOUNTNOTIFY, 0, 1, cap_feature_notify),
+    F_B(CAP_AWAYNOTIFY, 0, 1, cap_feature_notify),
+    F_B(CAP_CHGHOST, 0, 1, cap_feature_notify),
+    F_B(CAP_ECHOMESSAGE, 0, 1, cap_feature_notify),
+    F_B(CAP_EXTJOIN, 0, 1, cap_feature_notify),
+    F_B(CAP_INVITENOTIFY, 0, 1, cap_feature_notify),
+    F_B(CAP_MESSAGETAGS, 0, 1, cap_feature_notify),
+    F_B(CAP_SASL, 0, 1, cap_feature_notify),
+    F_B(CAP_UHNAMES, 0, 1, cap_feature_notify),
+    F_B(CAP_BATCH, 0, 1, cap_feature_notify),
+    F_B(CAP_CAPNOTIFY, 0, 1, cap_feature_notify),
+    F_B(CAP_SERVERTIME, 0, 1, cap_feature_notify),
+    F_B(CAP_LABELEDRESPONSE, 0, 1, cap_feature_notify),
+    F_B(CAP_MULTIPREFIX, 0, 1, cap_feature_notify),      
     F_S(CLIENTTAGDENY, FEAT_CASE | FEAT_NULL, "", 0),
 
     /* message-tags parameters */
@@ -466,6 +472,7 @@ static struct FeatureDesc {
     F_S(NETWORK, 0, "UnderNet", 0),
     F_S(URL_CLIENTS, 0, "ftp://ftp.undernet.org/pub/irc/clients", 0),
     F_S(URLREG, 0, "http://cservice.undernet.org/live/", 0),
+
 
 #undef F_S
 #undef F_B

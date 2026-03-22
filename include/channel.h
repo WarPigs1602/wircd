@@ -123,15 +123,16 @@ struct Client;
 #define MODE_TLSONLY       0x2000000    /**< +Z TLS users only */
 #define MODE_EXCEPTION     0x4000000    /**< +e Ban exception */
 #define MODE_NOKNOCK      0x8000000    /**< +K No knock */
+#define MODE_JOINFLOOD   0x10000000    /**< +j Join flood parameter */
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_EXCEPTION|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
+#define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_EXCEPTION|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_JOINFLOOD)
 
 /** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeiklmnopstUvrDdRcCPMK" : "beiklmnopstvrDdRcCPMK"
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeikljmnopstUvrDdRcCPMK" : "beikljmnopstvrDdRcCPMK"
 /** Available Channel modes that take parameters */
-#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbekloUv" : "beklov"
+#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbekljoUv" : "bekljov"
 
 #define HoldChannel(x)          (!(x))
 /** name invisible */
@@ -259,6 +260,7 @@ struct Mode {
   char key[KEYLEN + 1];
   char upass[KEYLEN + 1];
   char apass[KEYLEN + 1];
+  char joinflood[KEYLEN + 1];
 };
 
 #define BAN_IPMASK         0x0001  /**< ban mask is an IP-number mask */

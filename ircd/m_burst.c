@@ -129,6 +129,9 @@ netride_modes(int parc, char **parv, const char *curr_key)
     case 'l':
       ++parv;
       break;
+    case 'j':
+      ++parv;
+      break;
     case 'r':
       result |= MODE_REGONLY;
       break;

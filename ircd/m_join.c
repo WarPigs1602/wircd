@@ -435,6 +435,13 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
           chptr->mode.apass[0] = '\0';
         }
 
+        if ((chptr->mode.mode & MODE_JOINFLOOD) && chptr->mode.joinflood[0]) {
+          modebuf_mode_string(&mbuf, MODE_DEL | MODE_JOINFLOOD,
+                              chptr->mode.joinflood, 0);
+          chptr->mode.joinflood[0] = '\0';
+          chptr->mode.mode &= ~MODE_JOINFLOOD;
+        }
+
         for (member = chptr->members; member; member = member->next_member)
         {
           if (IsChanOp(member)) {

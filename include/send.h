@@ -37,6 +37,16 @@ extern void send_queued(struct Client *to);
  * WITHOUT A PREFIX!
  */
 extern void sendrawto_one(struct Client *to, const char *pattern, ...);
+extern void sendrawto_one_tagged(struct Client *to, const char *tags,
+								 const char *pattern, ...);
+
+/* Decorate direct command responses with labeled-response/server-time tags. */
+extern const char *decorate_response_tags(struct Client *to,
+					 const char *tags,
+					 char *out);
+
+/* Send ACCOUNT updates to local users sharing a channel with the source. */
+extern void send_account_notify(struct Client *from, const char *account);
 
 /* Send a command to one client */
 extern void sendcmdto_one(struct Client *from, const char *cmd,

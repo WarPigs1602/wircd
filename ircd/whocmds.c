@@ -26,6 +26,7 @@
  */
 #include "config.h"
 
+#include "capab.h"
 #include "whocmds.h"
 #include "channel.h"
 #include "client.h"
@@ -60,6 +61,15 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+static const char *who_account_for_requester(struct Client *sptr,
+                                             struct Client *acptr)
+{
+  if (IsAccount(acptr) && !EmptyString(cli_user(acptr)->account))
+    return cli_user(acptr)->account;
+
+  return CapActive(sptr, CAP_ACCOUNTNOTIFY) ? "*" : "0";
+}
 
 /** Send a WHO reply to a client who asked.
  * @param[in] sptr Client who is searching for other users.
@@ -238,12 +248,9 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
 
   if (fields & WHO_FIELD_ACC)
   {
-    char *p2 = cli_user(acptr)->account;
+    const char *p2 = who_account_for_requester(sptr, acptr);
     *(p1++) = ' ';
-    if (*p2)
-      while ((*p2) && (*(p1++) = *(p2++)));
-    else
-      *(p1++) = '0';
+    while ((*p2) && (*(p1++) = *(p2++)));
   }
 
   if (fields & WHO_FIELD_OPL)

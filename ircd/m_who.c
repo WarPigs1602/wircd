@@ -81,6 +81,7 @@
  */
 #include "config.h"
 
+#include "capab.h"
 #include "channel.h"
 #include "client.h"
 #include "hash.h"
@@ -121,6 +122,15 @@ static void move_marker(void)
 
 #define CheckMark(x, y) ((x == y) ? 0 : (x = y))
 #define Process(cptr) CheckMark(cli_marker(cptr), who_marker)
+
+static const char *who_account_for_requester(struct Client *sptr,
+                                             struct Client *acptr)
+{
+  if (IsAccount(acptr) && !EmptyString(cli_user(acptr)->account))
+    return cli_user(acptr)->account;
+
+  return CapActive(sptr, CAP_ACCOUNTNOTIFY) ? "*" : "0";
+}
 
 /*
  * m_who - generic message handler
@@ -420,7 +430,8 @@ int m_who(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
               || ((HasHiddenHost(acptr) || HasSetHost(acptr)) && !IsAnOper(sptr))
               || !ipmask_check(&cli_ip(acptr), &imask, ibits))
               && ((!(matchsel & WHO_FIELD_ACC))
-              || matchexec(cli_user(acptr)->account, mymask, minlen)))
+              || matchexec(who_account_for_requester(sptr, acptr), mymask,
+                           minlen)))
             continue;
           if (!SHOW_MORE(sptr, counter))
             break;
@@ -459,7 +470,8 @@ int m_who(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
             || ((HasHiddenHost(acptr) || HasSetHost(acptr)) && !IsAnOper(sptr))
             || !ipmask_check(&cli_ip(acptr), &imask, ibits))
             && ((!(matchsel & WHO_FIELD_ACC))
-            || matchexec(cli_user(acptr)->account, mymask, minlen)))
+            || matchexec(who_account_for_requester(sptr, acptr), mymask,
+                         minlen)))
           continue;
         if (!SHOW_MORE(sptr, counter))
           break;

@@ -32,6 +32,7 @@
 #include "hash.h"
 #include "ircd_alloc.h"
 #include "ircd_events.h"
+#include "history.h"
 #include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
@@ -739,6 +740,7 @@ int main(int argc, char **argv) {
   stats_init();
 
   IPcheck_init();
+  history_init();
   timer_add(timer_init(&connect_timer), try_connections, 0, TT_RELATIVE, 1);
   timer_add(timer_init(&ping_timer), check_pings, 0, TT_RELATIVE, 1);
   timer_add(timer_init(&destruct_event_timer), exec_expired_destruct_events, 0, TT_PERIODIC, 60);

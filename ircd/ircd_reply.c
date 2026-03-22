@@ -86,6 +86,8 @@ int send_reply(struct Client *to, int reply, ...)
   struct VarData vd;
   struct MsgBuf *mb;
   const struct Numeric *num;
+  char tags_buf[BUFSIZE];
+  const char *tags;
 
   assert(0 != to);
   assert(0 != reply);
@@ -102,7 +104,12 @@ int send_reply(struct Client *to, int reply, ...)
   assert(0 != vd.vd_format);
 
   /* build buffer */
-  mb = msgq_make(cli_from(to), "%:#C %s %C %v", &me, num->str, to, &vd);
+  tags = decorate_response_tags(to, 0, tags_buf);
+  if (tags && *tags == '@')
+    mb = msgq_make(cli_from(to), "%s %:#C %s %C %v", tags, &me, num->str, to,
+                   &vd);
+  else
+    mb = msgq_make(cli_from(to), "%:#C %s %C %v", &me, num->str, to, &vd);
 
   va_end(vd.vd_args);
 

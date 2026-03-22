@@ -129,6 +129,7 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
     MODE_NOPARTMSGS,    'P',
     MODE_MODERATENOREG, 'M',
     MODE_TLSONLY,       'Z',
+    MODE_JOINFLOOD,     'j',
     0x0, 0x0
   };
   int *flag_p;
@@ -176,6 +177,11 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
     chptr->mode.limit = 0; /* not referenced, so safe */
   }
 
+  /* If we're removing +j, include and clear its parameter. */
+  if (del_mode & MODE_JOINFLOOD && *chptr->mode.joinflood)
+    modebuf_mode_string(&mbuf, MODE_DEL | MODE_JOINFLOOD,
+                        chptr->mode.joinflood, 0);
+
   /*
    * Go through and mark the bans for deletion; note that we can't
    * free them until after modebuf_* are done with them
@@ -222,6 +228,8 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
   /* Finally, we can clear the key... */
   if (del_mode & MODE_KEY)
     chptr->mode.key[0] = '\0';
+  if (del_mode & MODE_JOINFLOOD)
+    chptr->mode.joinflood[0] = '\0';
 
   /* Ok, build control string again */
   for (flag_p = flags; flag_p[0]; flag_p += 2)
