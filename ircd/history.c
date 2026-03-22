@@ -30,6 +30,7 @@
 #include "capab.h"
 #include "channel.h"
 #include "client.h"
+#include "hash.h"
 #include "ircd.h"
 #include "ircd_alloc.h"
 #include "ircd_log.h"
@@ -255,13 +256,10 @@ history_send_range(struct Client *cptr,
     send_total = limit;
   skip_matches = matching_total - send_total;
   
-  /* Start chathistory batch if client supports it */
-  if (MyUser(cptr) && CapActive(cptr, CAP_BATCH)) {
+  /* Start chathistory batch for local clients with CAP_BATCH only.
+   * Remote clients receive P10-compatible NOTICEs instead. */
+  if (MyUser(cptr) && CapActive(cptr, CAP_BATCH))
     batch_ref = batch_start_chathistory(&me, cptr, send_target);
-  } else if (!MyUser(cptr)) {
-    /* For remote clients, always use batch since they requested CHATHISTORY */
-    batch_ref = batch_start_chathistory(&me, cptr, send_target);
-  }
   
   Debug((DEBUG_INFO, "Sending %d history messages to %s for %s (remote=%d)",
          send_total, cli_name(cptr), chptr->chname, !MyUser(cptr)));
@@ -323,30 +321,48 @@ history_send_range(struct Client *cptr,
                       send_target, msg->message);
       }
     } else {
-      /* Remote client - send via server link */
-      struct MsgBuf *mb;
-      struct Client *dest = cli_from(cptr); /* Get server link */
-      
-      if (batch_ref) {
-        char time_tag[64];
-        struct tm *tm = gmtime(&msg->timestamp);
-        
-        if (tm)
-          strftime(time_tag, sizeof(time_tag), "%Y-%m-%dT%H:%M:%S.000Z", tm);
+      /* Remote replay in original format where possible.
+       * Resolve nick from stored prefix and send real PRIVMSG/NOTICE from that
+       * client so receivers render native channel lines. */
+      char nick_buf[BUFSIZE];
+      char time_tag[64];
+      char tagbuf[96];
+      const char *bang;
+      size_t nick_len;
+      struct Client *from_client;
+      struct tm *tm = gmtime(&msg->timestamp);
+
+      if (tm)
+        strftime(time_tag, sizeof(time_tag), "%Y-%m-%dT%H:%M:%S.000Z", tm);
+      else
+        strcpy(time_tag, "1970-01-01T00:00:00.000Z");
+
+      ircd_snprintf(0, tagbuf, sizeof(tagbuf), "@time=%s", time_tag);
+
+      bang = strchr(msg->prefix, '!');
+      nick_len = bang ? (size_t)(bang - msg->prefix) : strlen(msg->prefix);
+      if (nick_len >= sizeof(nick_buf))
+        nick_len = sizeof(nick_buf) - 1;
+
+      memcpy(nick_buf, msg->prefix, nick_len);
+      nick_buf[nick_len] = '\0';
+
+      from_client = FindUser(nick_buf);
+      if (from_client) {
+        if (!ircd_strcmp(msg->command, "NOTICE"))
+          sendcmdto_one_tagged(from_client, CMD_NOTICE, cptr, tagbuf,
+                               "%s :%s", send_target, msg->message);
         else
-          strcpy(time_tag, "1970-01-01T00:00:00.000Z");
-        
-        mb = msgq_make(dest, "@time=%s;batch=%s :%s %s %s :%s",
-                       time_tag, batch_ref, msg->prefix, msg->command,
-                       send_target, msg->message);
+          sendcmdto_one_tagged(from_client, CMD_PRIVATE, cptr, tagbuf,
+                               "%s :%s", send_target, msg->message);
       } else {
-        mb = msgq_make(dest, ":%s %s %s :%s",
-                       msg->prefix, msg->command,
-                       send_target, msg->message);
+        char fallback_buf[512];
+
+        ircd_snprintf(0, fallback_buf, sizeof(fallback_buf), "[%s] <%s> %s",
+                      time_tag, msg->prefix, msg->message);
+        sendcmdto_one_tagged(&me, CMD_PRIVATE, cptr, tagbuf,
+                             "%s :%s", send_target, fallback_buf);
       }
-      
-      send_buffer(dest, mb, 0);
-      msgq_clean(mb);
     }
     
     count++;

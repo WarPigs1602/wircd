@@ -131,6 +131,7 @@ extern int mr_authenticate(struct Client*, struct Client*, int, char*[]);
 extern int m_batch(struct Client*, struct Client*, int, char*[]);
 extern int m_history(struct Client*, struct Client*, int, char*[]);
 extern int mo_history(struct Client*, struct Client*, int, char*[]);
+extern int ms_history(struct Client*, struct Client*, int, char*[]);
 extern int m_sethost(struct Client*, struct Client*, int, char*[]);
 extern int m_silence(struct Client*, struct Client*, int, char*[]);
 extern int m_stats(struct Client*, struct Client*, int, char*[]);

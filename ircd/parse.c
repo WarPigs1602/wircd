@@ -868,7 +868,7 @@ struct Message msgtab[] = {
      0,
      NULL,
      /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-     {m_unregistered, m_history, m_ignore, mo_history, m_ignore}},
+    {m_unregistered, m_history, ms_history, mo_history, m_ignore}},
     {MSG_TAGMSG,
      TOK_TAGMSG,
      0,
