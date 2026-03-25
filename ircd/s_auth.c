@@ -90,6 +90,7 @@ enum AuthRequestFlag {
   AR_IAUTH_FUSERNAME, /**< iauth sent a forced username */
   AR_IAUTH_SOFT_DONE, /**< iauth has no objection to client */
   AR_GLINE_CHECKED,   /**< checked for a G-line banning the client */
+  AR_SASL_STARTED,    /**< client has already sent first AUTHENTICATE token */
   AR_NUM_FLAGS
 };
 
@@ -853,12 +854,71 @@ void destroy_auth_request(struct AuthRequest *auth) {
   auth_freelist = auth;
 }
 
+/** Return comma-separated SASL mechanisms advertised by this server.
+ * Keep this list in sync with iauth/backend support.
+ */
+const char *auth_sasl_mechanisms(void) {
+  return "PLAIN,SCRAM-SHA-1,SCRAM-SHA-256,SCRAM-SHA-512";
+}
+
+/** Return non-zero if token looks like a SASL mechanism name.
+ * The first AUTHENTICATE payload is normally a mechanism token,
+ * while subsequent payloads are base64 chunks.
+ */
+static int sasl_is_mechanism_token(const char *token) {
+  const unsigned char *p = (const unsigned char *)token;
+
+  if (EmptyString(token))
+    return 0;
+
+  for (; *p; ++p) {
+    if (!(IsUpper(*p) || IsDigit(*p) || *p == '-' || *p == '_'))
+      return 0;
+  }
+
+  return 1;
+}
+
+/** Return non-zero if mechanism is in auth_sasl_mechanisms(). */
+static int sasl_is_supported_mechanism(const char *mechanism) {
+  const char *list = auth_sasl_mechanisms();
+  const char *entry = list;
+
+  while (*entry) {
+    const char *sep = strchr(entry, ',');
+    size_t len = sep ? (size_t)(sep - entry) : strlen(entry);
+
+    if (strlen(mechanism) == len && !strncmp(entry, mechanism, len))
+      return 1;
+
+    if (!sep)
+      break;
+    entry = sep + 1;
+  }
+
+  return 0;
+}
+
 /** Handle SASL
  */
 int auth_set_sasl(struct AuthRequest *auth, const char *crypt) {
   assert(auth != NULL);
   if (!CapHas(cli_capab(auth->client), CAP_SASL))
     return -1;
+
+  /* Validate only the first mechanism token and leave challenge/response
+   * payloads to iauth. This allows SCRAM and future token-based
+   * mechanisms without filtering base64 frames.
+   */
+  if (!FlagHas(&auth->flags, AR_SASL_STARTED) &&
+      sasl_is_mechanism_token(crypt) &&
+      !sasl_is_supported_mechanism(crypt)) {
+    send_reply(auth->client, RPL_SASLMECHS, auth_sasl_mechanisms());
+    return -1;
+  }
+
+  if (!FlagHas(&auth->flags, AR_SASL_STARTED))
+    FlagSet(&auth->flags, AR_SASL_STARTED);
 
   if (!sendto_iauth(auth->client, "Y %s", crypt)) {
     return -1;
@@ -874,6 +934,7 @@ int auth_set_sasl(struct AuthRequest *auth, const char *crypt) {
 int auth_ping_timeout(struct Client *cptr) {
   struct AuthRequest *auth;
   enum AuthRequestFlag flag;
+  int only_cap_pending = 1;
 
   auth = cli_auth(cptr);
 
@@ -883,12 +944,26 @@ int auth_ping_timeout(struct Client *cptr) {
     return exit_client_msg(cptr, cptr, &me, "Registration Timeout");
 
   /* Check for a user-controlled timeout. */
-  for (flag = 0; flag <= AR_LAST_SCAN; ++flag) {
+  for (flag = 1; flag <= AR_LAST_SCAN; ++flag) {
     if (FlagHas(&auth->flags, flag)) {
-      /* Display message if they have sent a NICK and a USER but no
-       * nospoof PONG.
-       */
-      if (*(cli_name(cptr)) && cli_user(cptr) && *(cli_user(cptr))->username) {
+      if (flag != AR_CAP_PENDING)
+        only_cap_pending = 0;
+    }
+  }
+
+  /* Some older clients never send CAP END. If CAP is the only block,
+   * unblock registration instead of timing out.
+   */
+  if (only_cap_pending && FlagHas(&auth->flags, AR_CAP_PENDING)) {
+    sendrawto_one(cptr, "NOTICE AUTH :*** Closing stalled CAP negotiation");
+    return check_auth_finished(auth, AR_CAP_PENDING);
+  }
+
+  for (flag = 1; flag <= AR_LAST_SCAN; ++flag) {
+    if (FlagHas(&auth->flags, flag)) {
+      /* Display this message only for missing nospoof PONG. */
+      if (flag == AR_NEEDS_PONG && *(cli_name(cptr)) && cli_user(cptr) &&
+          *(cli_user(cptr))->username) {
         send_reply(cptr, SND_EXPLICIT | ERR_BADPING,
                    ":Your client may not be compatible with this server.");
         send_reply(cptr, SND_EXPLICIT | ERR_BADPING,
@@ -2154,51 +2229,77 @@ static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli, int parc,
       send_reply(cli, ERR_SASLFAIL);
   } else if (!ircd_strcmp(cmd, "O")) {
     send_reply(cli, ERR_SASLABORTED);
+    FlagClr(&cli_auth(cli)->flags, AR_IAUTH_PENDING);
+    return AR_IAUTH_PENDING;
   } else if (!ircd_strcmp(cmd, "M")) {
     if (parc > 1)
       send_reply(cli, RPL_SASLMECHS, params[parc - 1]);
     send_reply(cli, ERR_SASLFAIL);
+    FlagClr(&cli_auth(cli)->flags, AR_IAUTH_PENDING);
+    return AR_IAUTH_PENDING;
   } else if (!ircd_strcmp(cmd, "S")) {
-    if (parc <= 4 || EmptyString(params[3]) || EmptyString(params[4])) {
-      send_reply(cli, ERR_SASLFAIL);
-      return 0;
-    }
     int had_account = IsAccount(cli);
     char old_account[ACCOUNTLEN + 1];
-    char *nick = params[1];
-    char *account = params[2];
-    char *timestamp = params[3];
-    char *id = params[4];
+    const char *account = NULL;
+    const char *timestamp = NULL;
+    const char *id = NULL;
 
     old_account[0] = '\0';
     if (had_account)
       ircd_strncpy(old_account, cli_user(cli)->account, ACCOUNTLEN + 1);
 
-    ircd_strncpy(cli_user(cli)->account, account, ACCOUNTLEN);
-    cli_user(cli)->acc_create = atoi(timestamp);
-    cli_user(cli)->acc_id = strtoul(id, NULL, 10);
-    SetAccount(cli);
-    if (!had_account || 0 != strcmp(old_account, cli_user(cli)->account))
-      send_account_notify(cli, cli_user(cli)->account);
-    send_reply(cli, RPL_LOGGEDIN, cli, cli_name(cli), account);
+    /* Accept both old and compact iauth success formats:
+     *   S <nick> <account> <ts> <id>
+     *   S <account>
+     *   S
+     */
+    if (parc >= 5 && !EmptyString(params[2])) {
+      account = params[2];
+      timestamp = params[3];
+      id = params[4];
+    } else if (parc >= 2 && !EmptyString(params[1])) {
+      account = params[1];
+    }
+
+    if (account) {
+      ircd_strncpy(cli_user(cli)->account, account, ACCOUNTLEN);
+      if (timestamp && !EmptyString(timestamp))
+        cli_user(cli)->acc_create = atoi(timestamp);
+      if (id && !EmptyString(id))
+        cli_user(cli)->acc_id = strtoul(id, NULL, 10);
+      SetAccount(cli);
+      if (!had_account || 0 != strcmp(old_account, cli_user(cli)->account))
+        send_account_notify(cli, cli_user(cli)->account);
+      send_reply(cli, RPL_LOGGEDIN, cli, cli_name(cli), account);
+    }
     send_reply(cli, RPL_SASLSUCCESS);
 
     /* Clear iauth pending flag and continue registration */
     FlagClr(&cli_auth(cli)->flags, AR_IAUTH_PENDING);
-    return 1;
+    return AR_IAUTH_PENDING;
   } else if (!ircd_strcmp(cmd, "N")) {
     send_reply(cli, ERR_NICKLOCKED);
     send_reply(cli, ERR_SASLFAIL);
+    FlagClr(&cli_auth(cli)->flags, AR_IAUTH_PENDING);
+    return AR_IAUTH_PENDING;
   } else if (!ircd_strcmp(cmd, "L")) {
     send_reply(cli, ERR_SASLTOOLONG);
     send_reply(cli, ERR_SASLFAIL);
+    FlagClr(&cli_auth(cli)->flags, AR_IAUTH_PENDING);
+    return AR_IAUTH_PENDING;
   } else if (!ircd_strcmp(cmd, "A")) {
     send_reply(cli, ERR_SASLALREADY);
     send_reply(cli, ERR_SASLFAIL);
+    FlagClr(&cli_auth(cli)->flags, AR_IAUTH_PENDING);
+    return AR_IAUTH_PENDING;
   } else if (!ircd_strcmp(cmd, "F")) {
     send_reply(cli, ERR_SASLFAIL);
+    FlagClr(&cli_auth(cli)->flags, AR_IAUTH_PENDING);
+    return AR_IAUTH_PENDING;
   } else {
     send_reply(cli, ERR_SASLFAIL);
+    FlagClr(&cli_auth(cli)->flags, AR_IAUTH_PENDING);
+    return AR_IAUTH_PENDING;
   }
   return 0;
 }

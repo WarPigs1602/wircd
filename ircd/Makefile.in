@@ -278,8 +278,10 @@ table_gen: table_gen.o
 chattr.tab.c: table_gen
 	./table_gen > chattr.tab.c
 
-y.tab.c y.tab.h: ircd_parser.y
+y.tab.c: ircd_parser.y
 	${YACC} -d ${srcdir}/ircd_parser.y
+
+y.tab.h: y.tab.c
 
 umkpasswd: ${UMKPASSWD_OBJS}
 	${CC} ${LDFLAGS} ${UMKPASSWD_OBJS} ${LIBS} -o $@

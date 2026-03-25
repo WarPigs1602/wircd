@@ -74,7 +74,7 @@ init_capability_values(void)
 
   for (i = 0; i < CAPAB_LIST_LEN; i++) {
     if (capab_list[i].cap == CAP_SASL)
-      capab_list[i].value = "PLAIN";
+      capab_list[i].value = (char *)auth_sasl_mechanisms();
   }
 
   initialized = 1;
